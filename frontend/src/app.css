@@ -1,0 +1,166 @@
+/* Force critical UI elements to act as valid drop targets for Wails OS Hook */
+html, body, .container, #drag-overlay {
+    --wails-drop-target: drop;
+}
+
+:root {
+    --bg-color: #1e1e2e;
+    --card-bg: #282a36;
+    --text-main: #f8f8f2;
+    --text-muted: #a1a1aa;
+    --border: #44475a;
+    --accent: #bd93f9;
+    --accent-hover: #ff79c6;
+    --btn-secondary: #44475a;
+    --btn-secondary-hover: #6272a4;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.container {
+    background-color: var(--card-bg);
+    padding: 24px;
+    border-radius: 12px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.filename {
+    color: var(--accent);
+    font-size: 0.95rem;
+    margin-top: 4px;
+    margin-bottom: 24px;
+    word-break: break-all;
+}
+
+.form-group {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+select, input {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+select:focus, input:focus {
+    border-color: var(--accent);
+}
+
+.hidden {
+    display: none;
+}
+
+.actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+}
+
+.right-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.btn-primary {
+    background-color: var(--accent);
+    color: #000;
+}
+.btn-primary:hover {
+    background-color: var(--accent-hover);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-main);
+}
+.btn-outline:hover {
+    background-color: var(--border);
+}
+
+.btn-secondary {
+    background-color: var(--btn-secondary);
+    color: var(--text-main);
+}
+.btn-secondary:hover {
+    background-color: var(--btn-secondary-hover);
+}
+
+/* Drag and Drop Overlays */
+body.drag-over {
+    background-color: var(--btn-secondary);
+}
+
+#drag-overlay {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(30, 30, 46, 0.9);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+    color: var(--accent);
+    font-size: 1.5rem;
+    font-weight: 600;
+    pointer-events: none; /* Let pointer events pass to underlying UI for Wails hit testing */
+    border: 3px dashed var(--accent);
+    box-sizing: border-box;
+}
+
+body.drag-over #drag-overlay {
+    display: flex;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-15px); }
+    40%, 80% { transform: translateX(15px); }
+}
+
+.shake-animation {
+    animation: shake 0.4s ease-in-out;
+}

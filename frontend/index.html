@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" style="--wails-drop-target: drop;">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>KiCad Library Manager</title>
+    <link rel="stylesheet" href="./src/app.css">
+    <style>
+        .view { display: flex; flex-direction: column; flex-grow: 1; height: 100%; overflow-y: auto;}
+        .view.hidden { display: none; }
+        .file-input-group { display: flex; gap: 8px; margin-top: 8px; margin-bottom: 12px; }
+        .file-input-group input { flex-grow: 1; cursor: pointer; font-size: 0.85rem;}
+        .header-row { display: flex; justify-content: space-between; align-items: flex-start; }
+        .btn-icon { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 8px; font-size: 1.1rem; transition: 0.2s; }
+        .btn-icon:hover { color: var(--text-main); background: var(--btn-secondary); }
+        .repo-list { background: var(--bg-color); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 200px; overflow-y: auto; margin-bottom: 16px; list-style-type: none; margin-top: 8px; padding-left: 12px; }
+        .repo-list li { font-size: 0.9rem; padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+        .repo-list li:last-child { border-bottom: none; }
+        .repo-list li span { color: var(--text-muted); font-size: 0.8rem; margin-left: 8px; }
+        .add-repo-box { border: 1px dashed var(--border); padding: 12px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;}
+        .add-repo-box input { width: 100%; box-sizing: border-box; }
+        
+        .history-list { list-style: none; padding: 0; margin: 8px 0 16px 0; background: var(--bg-color); border-radius: 6px; border: 1px solid var(--border); max-height: 200px; overflow-y: auto;}
+        .history-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.85rem;}
+        .history-item:last-child { border-bottom: none; }
+        .btn-undo { background: #ff5555; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: bold;}
+        .btn-undo:hover { background: #ff3333; }
+        .history-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;}
+    </style>
+</head>
+<body style="--wails-drop-target: drop;">
+    <div id="drag-overlay" style="--wails-drop-target: drop;">
+        <div>📁 Drop KiCad Files or Folders Here</div>
+    </div>
+    <div class="container" style="--wails-drop-target: drop;">
+        
+        <!-- VIEW 1: FIRST TIME SETUP -->
+        <div id="setup-view" class="view hidden">
+            <h2 class="title">Welcome to Library Manager</h2>
+            <p class="filename" style="color: var(--text-muted);">Let's set up your environment.</p>
+            <div class="form-group">
+                <label>Select your KiCad root library folder:</label>
+                <div class="file-input-group">
+                    <input type="text" id="lib-path-input" readonly placeholder="Click Browse...">
+                    <button class="btn btn-secondary" id="btn-browse">Browse</button>
+                </div>
+            </div>
+            <div class="actions" style="justify-content: flex-end;">
+                <button class="btn btn-primary" id="btn-save-setup" disabled>Save & Continue</button>
+            </div>
+        </div>
+
+        <!-- VIEW 2: MAIN COMPONENT DETECT -->
+        <div id="main-view" class="view hidden">
+            <div class="header-row">
+                <div style="flex-grow: 1;">
+                    <h2 class="title" id="main-title">Monitoring Folder...</h2>
+                    <p class="filename" id="filename-display">Waiting for file...</p>
+                </div>
+                <button id="btn-settings" class="btn-icon" title="Manage Libraries">⚙️</button>
+            </div>
+            <div class="form-group">
+                <label for="repository-select">Target Library (Repo):</label>
+                <select id="repository-select"></select>
+                
+                <label for="category-select" style="margin-top: 4px;">Destination Category:</label>
+                <select id="category-select"></select>
+                <input type="text" id="new-category-input" class="hidden" placeholder="Type new category name...">
+            </div>
+            <div class="actions">
+                <div>
+                    <button class="btn btn-secondary" id="btn-skip">Skip / Ignore</button>
+                </div>
+                <div class="right-actions">
+                    <button class="btn btn-outline" id="btn-cancel">Hide</button>
+                    <button class="btn btn-primary" id="btn-ok">OK</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 3: LIBRARY MANAGER & SETTINGS -->
+        <div id="settings-view" class="view hidden">
+            <h2 class="title" style="margin-bottom: 8px;">Settings & Libraries</h2>
+            
+            <label>Folder to Watch for New Downloads:</label>
+            <div class="file-input-group">
+                <input type="text" id="watch-dir-input" readonly>
+                <button class="btn btn-secondary" id="btn-browse-watch">Change</button>
+            </div>
+
+            <label>Active Repositories:</label>
+            <ul id="repo-list" class="repo-list"></ul>
+
+            <div class="add-repo-box">
+                <label style="font-size: 0.8rem;">Add New Git Library:</label>
+                <input type="text" id="new-repo-name" placeholder="Folder Name (e.g. OpenSource_Parts)">
+                <input type="text" id="new-repo-url" placeholder="Git URL (Optional)">
+                <button class="btn btn-primary" id="btn-add-repo" style="width: 100%; padding: 6px;">+ Add & Clone</button>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
+                <input type="checkbox" id="autostart-toggle" style="width: auto; cursor: pointer;">
+                <label for="autostart-toggle" style="color: var(--text-main); cursor: pointer; font-size: 0.95rem;">Run automatically on system startup</label>
+            </div>
+
+            <label>Recent History (Rollback):</label>
+            <ul id="history-list" class="history-list">
+                <!-- Dynamically populated -->
+            </ul>
+
+            <div class="actions" style="justify-content: flex-start; margin-top: auto; padding-bottom: 4px;">
+                <button class="btn btn-secondary" id="btn-settings-back">← Back</button>
+            </div>
+        </div>
+
+    </div>
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>

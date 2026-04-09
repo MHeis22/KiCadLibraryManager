@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A LibraryManagerW3 application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/librarymanagerw3.exe %u
+Terminal=false
+Type=Application
+Icon=librarymanagerw3.exe
+Categories=Utility;
+StartupWMClass=librarymanagerw3.exe
+
+ 
