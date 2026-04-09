@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events" // Added the events package
 )
 
 //go:embed frontend/dist
@@ -24,15 +25,25 @@ func main() {
 
 	// Create main window (hidden by default)
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "KiCad Library Manager",
-		Width:  500,
-		Height: 660,
-		Hidden: true,
+		Title:          "KiCad Library Manager",
+		Width:          500,
+		Height:         660,
+		Hidden:         true,
+		EnableFileDrop: true, // Required for Wails v3 to accept file drops
 	})
 
 	// Create our service and register it
 	appService := NewApp(app, window)
 	app.RegisterService(application.NewService(appService))
+
+	// Listen for the native Wails v3 file drop event
+	window.OnWindowEvent(events.Common.WindowFilesDropped, func(event *application.WindowEvent) {
+		files := event.Context().DroppedFiles()
+		for _, file := range files {
+			// Pass each file path directly into the existing logic
+			appService.HandleDroppedItem(file)
+		}
+	})
 
 	// Native Wails v3 System Tray Setup
 	systray := app.SystemTray.New()

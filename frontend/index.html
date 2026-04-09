@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="--wails-drop-target: drop;">
+<html lang="en">
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
@@ -28,11 +28,12 @@
         .history-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;}
     </style>
 </head>
-<body style="--wails-drop-target: drop;">
-    <div id="drag-overlay" style="--wails-drop-target: drop;">
+<!-- Mark the body as a file drop target for Wails v3 -->
+<body data-file-drop-target>
+    <div id="drag-overlay">
         <div>📁 Drop KiCad Files or Folders Here</div>
     </div>
-    <div class="container" style="--wails-drop-target: drop;">
+    <div class="container">
         
         <!-- VIEW 1: FIRST TIME SETUP -->
         <div id="setup-view" class="view hidden">

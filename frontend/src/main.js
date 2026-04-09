@@ -264,39 +264,9 @@ Events.On("file-rejected", (e) => {
     }, 2500);
 });
 
-// Advanced Drag & Drop with multi-file support using Native DOM (safe for all V3 alphas)
-let isVisualDragging = false;
-
-document.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    isVisualDragging = true;
-    document.body.classList.add('drag-over');
-});
-
-document.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    isVisualDragging = false;
-    document.body.classList.remove('drag-over');
-});
-
-document.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    isVisualDragging = false;
-    document.body.classList.remove('drag-over');
-
-    if (e.dataTransfer && e.dataTransfer.files) {
-        for (let file of e.dataTransfer.files) {
-            // Electron/Tauri/Wails often inject absolute path into `file.path`
-            let dropPath = file.path || file.name;
-            if (dropPath) {
-                await HandleDroppedItem(dropPath).catch(err => {
-                    console.error("Backend error processing drop:", err);
-                });
-            }
-        }
-    }
-});
-
+// REMOVED manual DOM event listeners:
+// Wails v3 intercepts OS file drags natively when EnableFileDrop is true.
+// The file path goes directly to Go, which triggers HandleDroppedItem and emits "file-detected"
 
 autostartToggle.addEventListener('change', async (e) => {
     // Note: ToggleAutoStart is not implemented in app.go currently.

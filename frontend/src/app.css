@@ -1,8 +1,3 @@
-/* Force critical UI elements to act as valid drop targets for Wails OS Hook */
-html, body, .container, #drag-overlay {
-    --wails-drop-target: drop;
-}
-
 :root {
     --bg-color: #1e1e2e;
     --card-bg: #282a36;
@@ -130,8 +125,8 @@ select:focus, input:focus {
     background-color: var(--btn-secondary-hover);
 }
 
-/* Drag and Drop Overlays */
-body.drag-over {
+/* Drag and Drop Overlays Using the Official Wails v3 CSS Class */
+body.file-drop-target-active {
     background-color: var(--btn-secondary);
 }
 
@@ -151,7 +146,8 @@ body.drag-over {
     box-sizing: border-box;
 }
 
-body.drag-over #drag-overlay {
+/* Show the overlay when hovering a file */
+body.file-drop-target-active #drag-overlay {
     display: flex;
 }
 
