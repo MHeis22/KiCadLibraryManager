@@ -37,7 +37,7 @@ func main() {
 	// Native Wails v3 System Tray Setup
 	systray := app.SystemTray.New()
 	systray.SetIcon(trayIcon) // trayIcon comes from autostart_*.go OS specifics
-	systray.SetLabel("Library Manager")
+	// systray.SetLabel("Library Manager")
 
 	menu := app.NewMenu()
 	menu.Add("Open Settings").OnClick(func(ctx *application.Context) {
