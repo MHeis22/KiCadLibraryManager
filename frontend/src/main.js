@@ -346,10 +346,9 @@ btnOk.addEventListener('click', async () => {
     
     try {
         await ProcessFile(currentFilename, chosenCategory, chosenRepo);
+        fileQueue.shift(); // Remove the finished file — do this before loadConfig so a failure there doesn't re-show a processed file
         await loadConfig();
         selectCategory.value = chosenCategory; // Remembers your choice for the next item in queue
-        
-        fileQueue.shift(); // Remove the finished file
         await processNextInQueue(); // Load the next one
     } catch (err) {
         alert("Processing Error: " + err);

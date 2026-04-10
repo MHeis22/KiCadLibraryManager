@@ -23,7 +23,12 @@ func GitSmartSync(repoPath string, commitMessage string) {
 	}
 
 	// 2. Stash any uncommitted changes (like the part we just generated)
-	exec.Command("git", "-C", repoPath, "stash").Run()
+	if err := exec.Command("git", "-C", repoPath, "stash").Run(); err != nil {
+		// exit code 1 means "nothing to stash" — that's fine; any other failure is real
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			fmt.Println("    [Git Warning] Stash failed:", err)
+		}
+	}
 
 	// 3. Pull with rebase to safely apply teammates' changes first
 	if err := exec.Command("git", "-C", repoPath, "pull", "--rebase").Run(); err != nil {
@@ -31,7 +36,9 @@ func GitSmartSync(repoPath string, commitMessage string) {
 	}
 
 	// 4. Pop the stash to put our new part back on top
-	exec.Command("git", "-C", repoPath, "stash", "pop").Run()
+	if err := exec.Command("git", "-C", repoPath, "stash", "pop").Run(); err != nil {
+		fmt.Println("    [Git ERROR] Stash pop failed — local changes may be lost:", err)
+	}
 
 	// 5. Add all changes
 	if err := exec.Command("git", "-C", repoPath, "add", ".").Run(); err != nil {

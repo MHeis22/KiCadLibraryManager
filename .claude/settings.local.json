@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"race\\\\|mutex\\\\|lock\\\\|concurrent\\\\|goroutine\\\\|go func\" /Users/manuheiskanen/Documents/LibraryManager/KiCadLibraryManagerW3/*.go)",
+      "Bash(grep -n \"RegisterService\\\\|ServiceStartup\" /Users/manuheiskanen/Documents/LibraryManager/KiCadLibraryManagerW3/*.go)",
+      "Bash(grep -rn \"Downloads\\\\|AppData\\\\|APPDATA\\\\|USERPROFILE\\\\|hardcoded\" /Users/manuheiskanen/Documents/LibraryManager/KiCadLibraryManagerW3/*.go)"
+    ]
+  }
+}

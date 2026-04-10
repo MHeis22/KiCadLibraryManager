@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -19,6 +20,7 @@ type App struct {
 	mainWindow    *application.WebviewWindow
 	watcherCtx    context.Context
 	watcherCancel context.CancelFunc
+	mu            sync.Mutex // protects all LoadConfig/SaveConfig pairs
 }
 
 func NewApp(app *application.App, window *application.WebviewWindow) *App { // Updated here as well
@@ -153,9 +155,11 @@ func (a *App) SelectDirectory() string {
 func (a *App) SelectWatchDirectory() string {
 	dir := a.SelectDirectory()
 	if dir != "" {
+		a.mu.Lock()
 		conf := LoadConfig()
 		conf.WatchDir = dir
 		SaveConfig(conf)
+		a.mu.Unlock()
 		a.StartWatcher() // Restart the watcher loop on the new directory
 		fmt.Println("--> Watch directory updated to:", dir)
 	}
@@ -163,11 +167,14 @@ func (a *App) SelectWatchDirectory() string {
 }
 
 func (a *App) SaveSetup(path string) error {
+	a.mu.Lock()
 	conf := LoadConfig()
 	conf.BaseLibPath = path
 	if err := SaveConfig(conf); err != nil {
+		a.mu.Unlock()
 		return fmt.Errorf("failed to save config: %w", err)
 	}
+	a.mu.Unlock()
 	fmt.Println("--> Saved new Base Library Path:", path)
 	// Immediately register KiCad tables and env var so parts appear without restart
 	InitializeKiCadLibraries(conf)
@@ -175,10 +182,13 @@ func (a *App) SaveSetup(path string) error {
 }
 
 func (a *App) AddRepository(name string, url string) error {
+	a.mu.Lock()
 	conf := LoadConfig()
 	if conf.BaseLibPath == "" {
+		a.mu.Unlock()
 		return fmt.Errorf("base library path is not set")
 	}
+	a.mu.Unlock()
 
 	destPath := filepath.Join(conf.BaseLibPath, name)
 
@@ -190,28 +200,41 @@ func (a *App) AddRepository(name string, url string) error {
 		os.MkdirAll(destPath, os.ModePerm)
 	}
 
+	a.mu.Lock()
+	conf = LoadConfig() // reload in case another goroutine modified it during the clone
 	conf.Repositories = append(conf.Repositories, Repository{Name: name, URL: url})
 	SaveConfig(conf)
+	a.mu.Unlock()
 	return nil
 }
 
 // UndoAction reverts a previously imported component
 func (a *App) UndoAction(id string) bool {
+	a.mu.Lock()
 	conf := LoadConfig()
 	var newHistory []HistoryItem
-	var target *HistoryItem
+	var target HistoryItem
+	found := false
 
-	for i, item := range conf.History {
+	for _, item := range conf.History {
 		if item.ID == id {
-			target = &conf.History[i]
+			target = item // copy by value — safe after slice is reassigned below
+			found = true
 		} else {
 			newHistory = append(newHistory, item)
 		}
 	}
 
-	if target == nil {
+	if !found {
+		a.mu.Unlock()
 		return false
 	}
+
+	conf.History = newHistory
+	if err := SaveConfig(conf); err != nil {
+		fmt.Println("Warning: failed to save config after undo:", err)
+	}
+	a.mu.Unlock()
 
 	for _, f := range target.AddedFiles {
 		os.Remove(f)
@@ -227,11 +250,6 @@ func (a *App) UndoAction(id string) bool {
 			}
 			fmt.Println("    [Undo] Restored symbol library from backup:", target.SymbolMaster)
 		}
-	}
-
-	conf.History = newHistory
-	if err := SaveConfig(conf); err != nil {
-		fmt.Println("Warning: failed to save config after undo:", err)
 	}
 
 	fmt.Println("--> Successfully undone import of", target.Filename)
@@ -295,6 +313,8 @@ func (a *App) isValidKiCadItem(path string) bool {
 func (a *App) ProcessFile(filename string, category string, repoName string) error {
 	fmt.Printf("--> Processing %s into the %s category of %s...\n", filename, category, repoName)
 
+	// --- Phase 1: read config snapshot and persist any new category ---
+	a.mu.Lock()
 	conf := LoadConfig()
 
 	if repoName == "" && len(conf.Repositories) > 0 {
@@ -312,11 +332,17 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	}
 	if isNew {
 		conf.Categories = append(conf.Categories, category)
+		SaveConfig(conf)
 	}
 
+	baseLibPath := conf.BaseLibPath
+	watchDir := conf.WatchDir
+	a.mu.Unlock()
+
+	// --- Phase 2: heavy file I/O (no lock held) ---
 	fullPath := filename
 	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(conf.WatchDir, filename)
+		fullPath = filepath.Join(watchDir, filename)
 	}
 
 	fileInfo, err := os.Stat(fullPath)
@@ -373,11 +399,11 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 		defer os.RemoveAll(tempDir)
 	}
 
-	if conf.BaseLibPath == "" {
+	if baseLibPath == "" {
 		return fmt.Errorf("base library path is not configured")
 	}
 
-	targetRepoRoot := filepath.Join(conf.BaseLibPath, repoName)
+	targetRepoRoot := filepath.Join(baseLibPath, repoName)
 
 	addedFiles, master, backup, err := IntegrateParts(assets, category, targetRepoRoot, repoName)
 	if err != nil {
@@ -386,6 +412,7 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 
 	fmt.Println("--> Successfully integrated parts into", repoName)
 
+	// --- Phase 3: lock again to append history and save ---
 	newItem := HistoryItem{
 		ID:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp:    time.Now().Unix(),
@@ -397,6 +424,8 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 		SymbolBackup: backup,
 	}
 
+	a.mu.Lock()
+	conf = LoadConfig() // reload so we don't clobber concurrent changes
 	conf.History = append(conf.History, newItem)
 	if len(conf.History) > 5 {
 		conf.History = conf.History[len(conf.History)-5:]
@@ -404,6 +433,7 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	if err := SaveConfig(conf); err != nil {
 		fmt.Println("Warning: failed to save config:", err)
 	}
+	a.mu.Unlock()
 
 	commitMsg := fmt.Sprintf("Added new part from %s into %s", filepath.Base(fullPath), category)
 	go GitSmartSync(targetRepoRoot, commitMsg)

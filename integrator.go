@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// kicadVersionRegex matches KiCad version directory names like "8" or "8.0"
+var kicadVersionRegex = regexp.MustCompile(`^\d+(\.\d+)?$`)
+
 // IntegrateParts moves extracted assets and returns tracking info for Undo functionality
 func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string, repoName string) ([]string, string, string, error) {
 
@@ -148,7 +151,9 @@ func InitializeKiCadLibraries(conf Config) {
 		if _, err := os.Stat(symPath); os.IsNotExist(err) {
 			os.MkdirAll(symDir, os.ModePerm)
 			emptyLib := "(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)\n)\n"
-			os.WriteFile(symPath, []byte(emptyLib), 0644)
+			if writeErr := os.WriteFile(symPath, []byte(emptyLib), 0644); writeErr != nil {
+				fmt.Printf("Warning: failed to create symbol library %s: %v\n", symPath, writeErr)
+			}
 		}
 		UpdateKiCadSymTable(category, symPath)
 	}
@@ -208,10 +213,8 @@ func UpdateKiCadEnvVar(basePath string) error {
 		return err
 	}
 
-	versionRegex := regexp.MustCompile(`^\d+(\.\d+)?$`)
-
 	for _, entry := range entries {
-		if !entry.IsDir() || !versionRegex.MatchString(entry.Name()) {
+		if !entry.IsDir() || !kicadVersionRegex.MatchString(entry.Name()) {
 			continue
 		}
 
@@ -220,7 +223,9 @@ func UpdateKiCadEnvVar(basePath string) error {
 		var configData map[string]interface{}
 		fileBytes, err := os.ReadFile(commonJsonPath)
 		if err == nil {
-			json.Unmarshal(fileBytes, &configData)
+			if jsonErr := json.Unmarshal(fileBytes, &configData); jsonErr != nil {
+				fmt.Printf("Warning: malformed kicad_common.json for KiCad %s: %v\n", entry.Name(), jsonErr)
+			}
 		}
 
 		if configData == nil {
@@ -310,10 +315,8 @@ func UpdateKiCadSymTable(libNickname, libPath string) error {
 		return err
 	}
 
-	versionRegex := regexp.MustCompile(`^\d+(\.\d+)?$`)
-
 	for _, entry := range entries {
-		if !entry.IsDir() || !versionRegex.MatchString(entry.Name()) {
+		if !entry.IsDir() || !kicadVersionRegex.MatchString(entry.Name()) {
 			continue
 		}
 
@@ -336,7 +339,10 @@ func UpdateKiCadSymTable(libNickname, libPath string) error {
 		}
 
 		newContent := sContent[:lastIdx] + entryStr + ")\n"
-		os.WriteFile(tablePath, []byte(newContent), 0644)
+		if err := os.WriteFile(tablePath, []byte(newContent), 0644); err != nil {
+			fmt.Printf("Warning: failed to write sym-lib-table for KiCad %s: %v\n", entry.Name(), err)
+			continue
+		}
 		fmt.Printf("--> Registered symbol library %s in KiCad %s\n", libNickname, entry.Name())
 	}
 	return nil
@@ -350,10 +356,8 @@ func UpdateKiCadFpTable(libNickname, libPath string) error {
 		return err
 	}
 
-	versionRegex := regexp.MustCompile(`^\d+(\.\d+)?$`)
-
 	for _, entry := range entries {
-		if !entry.IsDir() || !versionRegex.MatchString(entry.Name()) {
+		if !entry.IsDir() || !kicadVersionRegex.MatchString(entry.Name()) {
 			continue
 		}
 
@@ -376,7 +380,10 @@ func UpdateKiCadFpTable(libNickname, libPath string) error {
 		}
 
 		newContent := sContent[:lastIdx] + entryStr + ")\n"
-		os.WriteFile(tablePath, []byte(newContent), 0644)
+		if err := os.WriteFile(tablePath, []byte(newContent), 0644); err != nil {
+			fmt.Printf("Warning: failed to write fp-lib-table for KiCad %s: %v\n", entry.Name(), err)
+			continue
+		}
 		fmt.Printf("--> Registered footprint library %s in KiCad %s\n", libNickname, entry.Name())
 	}
 	return nil
