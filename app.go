@@ -33,6 +33,7 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 	conf := LoadConfig()
 	if conf.BaseLibPath == "" {
 		if a.mainWindow != nil {
+			macActivate()
 			a.mainWindow.Show()
 		}
 	}
@@ -54,7 +55,7 @@ func (a *App) StartWatcher() {
 func waitForFileReady(path string) bool {
 	maxRetries := 30 // Wait up to 15 seconds (30 * 500ms)
 	for i := 0; i < maxRetries; i++ {
-		file, err := os.OpenFile(path, os.O_RDWR, 0666)
+		file, err := os.OpenFile(path, os.O_RDONLY, 0666)
 		if err == nil {
 			file.Close() // File is free and readable!
 			return true
@@ -75,9 +76,16 @@ func (a *App) watchFolder(ctx context.Context) {
 	}
 	defer watcher.Close()
 
+	if watchPath == "" {
+		fmt.Println("--> Watch directory not configured, watcher not started")
+		a.app.Event.Emit("watcher-error", "Watch directory is not configured.")
+		return
+	}
+
 	err = watcher.Add(watchPath)
 	if err != nil {
 		fmt.Println("Error adding path to watcher:", err)
+		a.app.Event.Emit("watcher-error", fmt.Sprintf("Cannot watch folder: %s", err.Error()))
 		return
 	}
 	fmt.Println("--> Wails Backend Successfully watching:", watchPath)
@@ -110,6 +118,7 @@ func (a *App) watchFolder(ctx context.Context) {
 						fmt.Println("Real file verified:", filename)
 
 						if a.mainWindow != nil {
+							macActivate()
 							a.mainWindow.Show()
 						}
 						a.app.Event.Emit("file-detected", filename)
@@ -216,7 +225,9 @@ func (a *App) UndoAction(id string) bool {
 	}
 
 	conf.History = newHistory
-	SaveConfig(conf)
+	if err := SaveConfig(conf); err != nil {
+		fmt.Println("Warning: failed to save config after undo:", err)
+	}
 
 	fmt.Println("--> Successfully undone import of", target.Filename)
 	return true
@@ -236,6 +247,7 @@ func (a *App) HandleDroppedItem(path string) error {
 	}
 
 	if a.mainWindow != nil {
+		macActivate()
 		a.mainWindow.Show()
 	}
 	a.app.Event.Emit("file-detected", path)
@@ -384,7 +396,9 @@ func (a *App) ProcessFile(filename string, category string, repoName string) {
 			if len(conf.History) > 5 {
 				conf.History = conf.History[len(conf.History)-5:]
 			}
-			SaveConfig(conf)
+			if err := SaveConfig(conf); err != nil {
+				fmt.Println("Warning: failed to save config:", err)
+			}
 
 			commitMsg := fmt.Sprintf("Added new part from %s into %s", filepath.Base(fullPath), category)
 			go GitSmartSync(targetRepoRoot, commitMsg)
@@ -403,6 +417,7 @@ func (a *App) HideWindow() {
 	if a.mainWindow != nil {
 		a.mainWindow.Hide()
 	}
+	macDeactivate()
 }
 
 func (a *App) GetItemSummary(filename string) string {

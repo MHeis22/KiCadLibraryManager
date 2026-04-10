@@ -235,9 +235,23 @@ Events.On("file-detected", async (e) => {
     const filename = Array.isArray(e.data) ? e.data[0] : e.data;
     fileQueue.push(filename);
     if (fileQueue.length === 1) {
+        // First item — start processing immediately
         await processNextInQueue();
-    } else {
-        await processNextInQueue(); 
+    }
+    // Additional items are already shown via the queue badge inside processNextInQueue
+});
+
+Events.On("watcher-error", (e) => {
+    const message = Array.isArray(e.data) ? e.data[0] : e.data;
+    console.error("Watcher error:", message);
+    const titleEl = document.getElementById('main-title');
+    if (titleEl) {
+        titleEl.innerText = "Watch Error";
+        titleEl.style.color = "var(--error, #ff5555)";
+    }
+    const filenameEl = document.getElementById('filename-display');
+    if (filenameEl) {
+        filenameEl.innerHTML = `<small style="color: var(--error, #ff5555);">${message}<br>Check the watch folder in Settings.</small>`;
     }
 });
 
