@@ -169,8 +169,7 @@ func injectSymbol(sourceFile, masterFile, category, footprintName string) error 
 }
 
 func UpdateKiCadEnvVar(basePath string) error {
-	configDir, _ := os.UserConfigDir()
-	kicadBase := filepath.Join(configDir, "kicad")
+	kicadBase := filepath.Join(kicadConfigDir(), "kicad")
 
 	entries, err := os.ReadDir(kicadBase)
 	if err != nil {
@@ -272,8 +271,7 @@ func copyFile(src, dest string) error {
 }
 
 func UpdateKiCadSymTable(libNickname, libPath string) error {
-	configDir, _ := os.UserConfigDir()
-	kicadBase := filepath.Join(configDir, "kicad")
+	kicadBase := filepath.Join(kicadConfigDir(), "kicad")
 
 	entries, err := os.ReadDir(kicadBase)
 	if err != nil {
@@ -313,8 +311,7 @@ func UpdateKiCadSymTable(libNickname, libPath string) error {
 }
 
 func UpdateKiCadFpTable(libNickname, libPath string) error {
-	configDir, _ := os.UserConfigDir()
-	kicadBase := filepath.Join(configDir, "kicad")
+	kicadBase := filepath.Join(kicadConfigDir(), "kicad")
 
 	entries, err := os.ReadDir(kicadBase)
 	if err != nil {

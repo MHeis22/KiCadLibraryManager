@@ -52,6 +52,7 @@ func main() {
 
 	menu := app.NewMenu()
 	menu.Add("Open Settings").OnClick(func(ctx *application.Context) {
+		macActivate()
 		window.Show()
 	})
 	menu.AddSeparator()
