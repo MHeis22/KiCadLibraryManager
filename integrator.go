@@ -269,17 +269,20 @@ func patchFootprint3DPath(src, dest, category, modelFileName, repoName string) e
 	}
 	content := string(contentBytes)
 
-	// Define the new path string with the environment variable
-	newModelPath := fmt.Sprintf("(model \"${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s\"\n    (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0))\n  )", repoName, category, modelFileName)
-
-	re := regexp.MustCompile(`(?i)\(model\s+"?([^"\)]+\.(?:step|stp|wrl))"?.*?\n?\s*\)`)
+	// Target ONLY the first line of the model declaration to swap the path.
+	// Group 1 captures `(model ` and Group 2 is the file path.
+	re := regexp.MustCompile(`(?i)(\(model\s+)"?([^"\)]+\.(?:step|stp|wrl))"?`)
 
 	var patchedContent string
 	if re.MatchString(content) {
-		// Scenario 1: Model exists, replace it
-		patchedContent = re.ReplaceAllString(content, newModelPath)
+		// Scenario 1: Model exists. Replace ONLY the path string.
+		// Use $$ to escape the literal $ in Go's regex ReplaceAllString
+		newPathStr := fmt.Sprintf(`${1}"$${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s"`, repoName, category, modelFileName)
+		patchedContent = re.ReplaceAllString(content, newPathStr)
 	} else {
-		// Scenario 2: No model tag, inject it before the final closing bracket
+		// Scenario 2: No model tag exists at all, inject a fresh one at the end.
+		// Since we use string concatenation here (not regex expansion), a single $ is fine.
+		newModelPath := fmt.Sprintf("(model \"${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s\"\n    (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0))\n  )", repoName, category, modelFileName)
 		lastParenIdx := strings.LastIndex(content, ")")
 		if lastParenIdx == -1 {
 			return fmt.Errorf("malformed footprint file")

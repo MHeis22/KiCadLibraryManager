@@ -1,17 +1,18 @@
 import { Events } from '@wailsio/runtime';
-import { 
-    GetConfig, 
-    ProcessFile, 
-    UndoAction, 
-    SelectDirectory, 
-    SelectWatchDirectory, 
-    SaveSetup, 
-    AddRepository, 
-    SkipFile, 
-    HandleDroppedItem, 
-    HideWindow, 
-    GetItemSummary, 
-    GuessCategory 
+import {
+    GetConfig,
+    ProcessFile,
+    UndoAction,
+    SelectDirectory,
+    SelectWatchDirectory,
+    SaveSetup,
+    AddRepository,
+    SkipFile,
+    HandleDroppedItem,
+    HideWindow,
+    GetItemSummary,
+    GuessCategory,
+    ToggleAutoStart
 } from '../bindings/kicad-lib-mgr/app.js';
 
 const setupView = document.getElementById('setup-view');
@@ -282,9 +283,12 @@ Events.On("file-rejected", (e) => {
 // The file path goes directly to Go, which triggers HandleDroppedItem and emits "file-detected"
 
 autostartToggle.addEventListener('change', async (e) => {
-    // Note: ToggleAutoStart is not implemented in app.go currently.
-    alert("AutoStart configuration is currently managed via your OS settings.");
-    e.target.checked = !e.target.checked; 
+    try {
+        await ToggleAutoStart(e.target.checked);
+    } catch (err) {
+        console.error('AutoStart toggle failed:', err);
+        e.target.checked = !e.target.checked; // revert on error
+    }
 });
 
 btnBrowse.addEventListener('click', async () => {

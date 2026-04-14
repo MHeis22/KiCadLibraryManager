@@ -107,6 +107,17 @@ export function StartWatcher() {
 }
 
 /**
+ * ToggleAutoStart adds or removes the app from the Windows Registry Run key.
+ * Using the Registry is locale-independent; the "Start Menu" folder path is
+ * localised on non-English Windows and must not be hardcoded.
+ * @param {boolean} enable
+ * @returns {$CancellablePromise<void>}
+ */
+export function ToggleAutoStart(enable) {
+    return $Call.ByID(1830522718, enable);
+}
+
+/**
  * UndoAction reverts a previously imported component
  * @param {string} id
  * @returns {$CancellablePromise<boolean>}
