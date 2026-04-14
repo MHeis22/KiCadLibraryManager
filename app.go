@@ -61,21 +61,27 @@ func waitForFileReady(path string) bool {
 	var lastSize int64 = -1
 
 	for i := 0; i < maxRetries; i++ {
-		file, err := os.OpenFile(path, os.O_RDONLY, 0666)
-		if err == nil {
-			info, statErr := file.Stat()
-			file.Close() // Close immediately so we don't lock it
+		info, err := os.Stat(path) // Use Stat instead of OpenFile to avoid locking
 
-			if statErr == nil {
-				currentSize := info.Size()
-				// 1. Ignore 0-byte browser placeholders entirely
-				if currentSize > 0 {
-					// 2. Ensure the file is completely finished growing
-					if currentSize == lastSize {
+		if err != nil {
+			// If the browser deleted or renamed the temp file, stop watching it instantly
+			if os.IsNotExist(err) {
+				return false
+			}
+		} else {
+			currentSize := info.Size()
+			// 1. Ignore 0-byte browser placeholders entirely
+			if currentSize > 0 {
+				// 2. Ensure the file is completely finished growing
+				if currentSize == lastSize {
+					// 3. Do ONE final OpenFile check to ensure the browser has fully released its write-lock
+					file, lockErr := os.OpenFile(path, os.O_RDONLY, 0666)
+					if lockErr == nil {
+						file.Close()
 						return true
 					}
-					lastSize = currentSize
 				}
+				lastSize = currentSize
 			}
 		}
 		time.Sleep(500 * time.Millisecond)
