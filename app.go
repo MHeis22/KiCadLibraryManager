@@ -358,6 +358,55 @@ func (a *App) RemoveRepository(repoName string) error {
 	return nil
 }
 
+func (a *App) AddCategory(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+	for _, existing := range conf.Categories {
+		if strings.EqualFold(existing, name) {
+			return fmt.Errorf("category %q already exists", name)
+		}
+	}
+	conf.AddCustomCategory(name)
+	if err := SaveConfig(conf); err != nil {
+		return err
+	}
+	InitializeKiCadLibraries(conf)
+	return nil
+}
+
+func (a *App) RenameCategory(oldName string, newName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+	if err := conf.RenameCategory(oldName, newName); err != nil {
+		return err
+	}
+	if err := SaveConfig(conf); err != nil {
+		return err
+	}
+	InitializeKiCadLibraries(conf)
+	return nil
+}
+
+func (a *App) DeleteCategory(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+	if err := conf.DeleteCategory(name); err != nil {
+		return err
+	}
+	if err := SaveConfig(conf); err != nil {
+		return err
+	}
+	InitializeKiCadLibraries(conf)
+	return nil
+}
+
 // SetDefaultRepository marks a repository as the default import target.
 func (a *App) SetDefaultRepository(repoName string) error {
 	a.mu.Lock()

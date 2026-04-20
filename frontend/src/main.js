@@ -15,7 +15,10 @@ import {
     HideWindow,
     GetItemSummary,
     GuessCategory,
-    ToggleAutoStart
+    ToggleAutoStart,
+    AddCategory,
+    RenameCategory,
+    DeleteCategory
 } from '../bindings/kicad-lib-mgr/app.js';
 
 const setupView = document.getElementById('setup-view');
@@ -52,9 +55,11 @@ const btnConflictProceed = document.getElementById('btn-conflict-proceed');
 
 // UI Toggle Elements (New)
 const navTabLibs = document.getElementById('nav-tab-libs');
+const navTabCats = document.getElementById('nav-tab-cats');
 const navTabSys = document.getElementById('nav-tab-sys');
 const navTabHelp = document.getElementById('nav-tab-help');
 const contentLibs = document.getElementById('content-libs');
+const contentCats = document.getElementById('content-cats');
 const contentSys = document.getElementById('content-sys');
 const contentHelp = document.getElementById('content-help');
 const btnShowAddRepo = document.getElementById('btn-show-add-repo');
@@ -70,6 +75,13 @@ const btnAddLocal = document.getElementById('btn-add-local');
 const newGitUrl = document.getElementById('new-git-url');
 const newGitName = document.getElementById('new-git-name');
 const btnAddGit = document.getElementById('btn-add-git');
+
+const categorySettingsList = document.getElementById('category-settings-list');
+const btnShowAddCategory   = document.getElementById('btn-show-add-category');
+const addCategoryContainer = document.getElementById('add-category-container');
+const newCategoryName      = document.getElementById('new-category-name');
+const categoryAddError     = document.getElementById('category-add-error');
+const btnAddCategory       = document.getElementById('btn-add-category');
 
 // Queue system to handle rapid downloads or multi-file drops
 let fileQueue = [];
@@ -98,6 +110,7 @@ async function loadConfig() {
             autostartToggle.checked = currentConfig.autoStart || false;
             populateCategories(currentConfig.categories || []);
             populateRepositories(currentConfig.repositories || []);
+            populateCategorySettings(currentConfig.categories || []);
             populateHistory(currentConfig.history || []);
         }
     } catch (err) {
@@ -200,6 +213,94 @@ function populateRepositories(repositories) {
     if (defaultRepo) {
         repositorySelect.value = defaultRepo;
     }
+}
+
+function populateCategorySettings(categories) {
+    categorySettingsList.innerHTML = "";
+    const sorted = [...categories].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    const isLast = sorted.length === 1;
+
+    sorted.forEach(cat => {
+        const li = document.createElement('li');
+        li.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px;";
+
+        const nameSpan = document.createElement('span');
+        nameSpan.style.flex = "1";
+        nameSpan.innerText = cat;
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn-icon';
+        renameBtn.title = 'Rename category';
+        renameBtn.innerText = '✏️';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-icon';
+        deleteBtn.title = isLast ? 'Cannot delete the last category' : 'Delete category';
+        deleteBtn.innerText = '🗑️';
+        deleteBtn.disabled = isLast;
+        deleteBtn.style.opacity = isLast ? '0.3' : '1';
+
+        renameBtn.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = cat;
+            input.style.cssText = "flex:1; padding:2px 6px; font-size:0.9rem; border-radius:4px; border:1px solid var(--border); background:var(--bg-color); color:white;";
+
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn-icon';
+            saveBtn.title = 'Save';
+            saveBtn.innerText = '✔';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn-icon';
+            cancelBtn.title = 'Cancel';
+            cancelBtn.innerText = '✖';
+
+            li.replaceChild(input, nameSpan);
+            li.replaceChild(saveBtn, renameBtn);
+            li.insertBefore(cancelBtn, deleteBtn);
+            input.focus();
+            input.select();
+
+            const doRename = async () => {
+                const newName = input.value.trim();
+                if (!newName || newName === cat) { await loadConfig(); return; }
+                try {
+                    await RenameCategory(cat, newName);
+                    await loadConfig();
+                } catch (err) {
+                    input.style.borderColor = '#ff5555';
+                    input.title = String(err).replace(/^error:/i, '').trim();
+                    setTimeout(() => {
+                        input.style.borderColor = '';
+                        input.title = '';
+                    }, 4000);
+                }
+            };
+
+            saveBtn.addEventListener('click', doRename);
+            cancelBtn.addEventListener('click', () => loadConfig());
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter')  doRename();
+                if (e.key === 'Escape') loadConfig();
+            });
+        });
+
+        deleteBtn.addEventListener('click', async () => {
+            if (!confirm(`Delete category "${cat}"?\nThis only removes it from the list — existing files are not affected.`)) return;
+            try {
+                await DeleteCategory(cat);
+                await loadConfig();
+            } catch (err) {
+                alert('Delete failed: ' + err);
+            }
+        });
+
+        li.appendChild(nameSpan);
+        li.appendChild(renameBtn);
+        li.appendChild(deleteBtn);
+        categorySettingsList.appendChild(li);
+    });
 }
 
 function populateHistory(historyItems) {
@@ -313,13 +414,35 @@ async function processNextInQueue() {
 
 // UI Toggles (Tabs & Expanders)
 function switchSettingsTab(activeBtn, activeContent) {
-    [navTabLibs, navTabSys, navTabHelp].forEach(b => b.classList.remove('active'));
-    [contentLibs, contentSys, contentHelp].forEach(c => c.classList.remove('active'));
+    [navTabLibs, navTabCats, navTabSys, navTabHelp].forEach(b => b.classList.remove('active'));
+    [contentLibs, contentCats, contentSys, contentHelp].forEach(c => c.classList.remove('active'));
     activeBtn.classList.add('active');
     activeContent.classList.add('active');
 }
 
+function formatWailsError(err) {
+    // 1. If it's a JS Error object, grab its message directly. Otherwise, cast to string.
+    let msg = (err && err.message) ? err.message : String(err);
+
+    // 2. Strip any leftover "Error:" prefixes just in case
+    msg = msg.replace(/^error:\s*/i, '').trim();
+
+    // 3. Now it's a clean string, try to parse the Wails JSON
+    try {
+        const parsed = JSON.parse(msg);
+        if (parsed && parsed.message) {
+            msg = parsed.message;
+        }
+    } catch (e) {
+        // If it's not JSON, do nothing and fall through
+    }
+    
+    // Capitalize the first letter for a polished look
+    return msg.charAt(0).toUpperCase() + msg.slice(1);
+}
+
 navTabLibs.addEventListener('click', () => switchSettingsTab(navTabLibs, contentLibs));
+navTabCats.addEventListener('click', () => switchSettingsTab(navTabCats, contentCats));
 navTabSys.addEventListener('click', () => switchSettingsTab(navTabSys, contentSys));
 navTabHelp.addEventListener('click', () => switchSettingsTab(navTabHelp, contentHelp));
 
@@ -327,6 +450,13 @@ btnShowAddRepo.addEventListener('click', () => {
     addRepoContainer.classList.toggle('hidden');
     const isHidden = addRepoContainer.classList.contains('hidden');
     btnShowAddRepo.innerText = isHidden ? "+ Add Repo" : "Collapse";
+});
+
+btnShowAddCategory.addEventListener('click', () => {
+    addCategoryContainer.classList.toggle('hidden');
+    const collapsed = addCategoryContainer.classList.contains('hidden');
+    btnShowAddCategory.innerText = collapsed ? '+ Add Category' : 'Collapse';
+    if (!collapsed) newCategoryName.focus();
 });
 
 tabLocal.addEventListener('click', () => {
@@ -607,6 +737,36 @@ btnAddGit.addEventListener('click', async () => {
     } finally {
         btnAddGit.disabled = false;
         btnAddGit.innerText = 'Validate & Clone';
+    }
+});
+
+btnAddCategory.addEventListener('click', async () => {
+    const name = newCategoryName.value.trim();
+    if (!name) {
+        newCategoryName.style.borderColor = 'red';
+        setTimeout(() => newCategoryName.style.borderColor = '', 2000);
+        return;
+    }
+    btnAddCategory.disabled = true;
+    btnAddCategory.innerText = 'Adding...';
+    try {
+        await AddCategory(name);
+        await loadConfig();
+        newCategoryName.value = '';
+        categoryAddError.style.display = 'none';
+        addCategoryContainer.classList.add('hidden');
+        btnShowAddCategory.innerText = '+ Add Category';
+    } catch (err) {
+        categoryAddError.innerText = formatWailsError(err);
+        categoryAddError.style.display = 'inline';
+        newCategoryName.style.borderColor = '#ff5555';
+        setTimeout(() => {
+            categoryAddError.style.display = 'none';
+            newCategoryName.style.borderColor = '';
+        }, 4000);
+    } finally {
+        btnAddCategory.disabled = false;
+        btnAddCategory.innerText = 'Add Category';
     }
 });
 

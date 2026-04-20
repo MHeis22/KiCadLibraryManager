@@ -31,7 +31,7 @@
         .btn-icon { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 8px; font-size: 1.1rem; transition: 0.2s; }
         .btn-icon:hover { color: var(--text-main); background: var(--btn-secondary); }
         
-        .repo-list { background: var(--bg-color); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 200px; overflow-y: auto; margin-bottom: 8px; list-style-type: none; padding-left: 12px; padding-right: 4px;}
+        .repo-list { background: var(--bg-color); border: 1px solid var(--border); border-radius: 6px; padding: 8px; max-height: 450px; overflow-y: auto; margin-bottom: 8px; list-style-type: none; padding-left: 12px; padding-right: 4px;}
         .repo-list li { font-size: 0.9rem; padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
         .repo-list li:last-child { border-bottom: none; }
         .repo-list li span { color: var(--text-muted); font-size: 0.8rem; margin-left: 8px; }
@@ -147,6 +147,7 @@
             <!-- TAB NAVIGATION -->
             <div class="tab-nav">
                 <button id="nav-tab-libs" class="tab-btn active">Libraries</button>
+                <button id="nav-tab-cats" class="tab-btn">Categories</button>
                 <button id="nav-tab-sys" class="tab-btn">System & History</button>
                 <button id="nav-tab-help" class="tab-btn">Help</button>
             </div>
@@ -185,9 +186,29 @@
                         <button class="btn btn-primary" id="btn-add-git" style="width: 100%; padding: 6px;">Validate & Clone</button>
                     </div>
                 </div>
+
             </div>
 
-            <!-- TAB 2: SYSTEM & HISTORY -->
+            <!-- TAB 2: CATEGORIES -->
+            <div id="content-cats" class="tab-content">
+                <div class="header-row" style="margin-bottom: 4px; align-items: center;">
+                    <label style="margin: 0;">Component Categories:</label>
+                    <button id="btn-show-add-category" class="btn-icon" style="font-size: 0.8rem; padding: 2px 8px;">+ Add Category</button>
+                </div>
+                <ul id="category-settings-list" class="repo-list"></ul>
+
+                <!-- COLLAPSIBLE ADD CATEGORY FORM -->
+                <div id="add-category-container" class="hidden" style="background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; margin-top: 4px; border: 1px solid var(--border);">
+                    <input type="text" id="new-category-name" placeholder="Category name (e.g. Oscillators)"
+                           style="width: 100%; box-sizing: border-box; padding: 8px;
+                                  border-radius: 4px; border: 1px solid var(--border);
+                                  background: var(--bg-color); color: white;">
+                    <span id="category-add-error" style="display:none; color:#ff5555; font-size:0.8rem; margin: 4px 0 8px;"></span>
+                    <button class="btn btn-secondary" id="btn-add-category" style="width: 100%; padding: 6px; margin-top: 8px;">Add Category</button>
+                </div>
+            </div>
+
+            <!-- TAB 3: SYSTEM & HISTORY -->
             <div id="content-sys" class="tab-content">
                 <div class="form-group" style="flex: 0 0 auto; margin-bottom: 16px; display: flex; flex-direction: row; align-items: center; gap: 8px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; border: 1px solid var(--border);">
                     <input type="checkbox" id="autostart-toggle" style="width: auto; cursor: pointer;">

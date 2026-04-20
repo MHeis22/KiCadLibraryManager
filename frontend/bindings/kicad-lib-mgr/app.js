@@ -12,6 +12,14 @@ import * as $models from "./models.js";
 
 /**
  * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function AddCategory(name) {
+    return $Call.ByID(1180544068, name);
+}
+
+/**
+ * @param {string} name
  * @param {string} url
  * @returns {$CancellablePromise<void>}
  */
@@ -30,6 +38,14 @@ export function CheckConflicts(filename, category, repoName) {
     return $Call.ByID(2224678442, filename, category, repoName).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType0($result);
     }));
+}
+
+/**
+ * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function DeleteCategory(name) {
+    return $Call.ByID(988551738, name);
 }
 
 /**
@@ -94,6 +110,15 @@ export function RemoveRepository(repoName) {
 }
 
 /**
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {$CancellablePromise<void>}
+ */
+export function RenameCategory(oldName, newName) {
+    return $Call.ByID(3179227807, oldName, newName);
+}
+
+/**
  * @param {string} path
  * @returns {$CancellablePromise<void>}
  */
@@ -148,7 +173,9 @@ export function SyncAllRepositories() {
 }
 
 /**
- * ToggleAutoStart must be defined here for macOS so Wails can generate the binding.
+ * ToggleAutoStart adds or removes the app from the Windows Registry Run key.
+ * Using the Registry is locale-independent; the "Start Menu" folder path is
+ * localised on non-English Windows and must not be hardcoded.
  * @param {boolean} enable
  * @returns {$CancellablePromise<void>}
  */

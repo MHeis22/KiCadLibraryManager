@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,4 +151,57 @@ func (c *Config) AddCustomCategory(category string) {
 	}
 
 	c.AutoCategoryMap[category] = keywords
+}
+
+func (c *Config) RenameCategory(oldName string, newName string) error {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return fmt.Errorf("new category name cannot be empty")
+	}
+	for _, existing := range c.Categories {
+		if strings.EqualFold(existing, newName) && !strings.EqualFold(existing, oldName) {
+			return fmt.Errorf("category %q already exists", newName)
+		}
+	}
+	found := false
+	for i, cat := range c.Categories {
+		if cat == oldName {
+			c.Categories[i] = newName
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("category %q not found", oldName)
+	}
+	if c.AutoCategoryMap != nil {
+		if keywords, ok := c.AutoCategoryMap[oldName]; ok {
+			c.AutoCategoryMap[newName] = keywords
+			delete(c.AutoCategoryMap, oldName)
+		}
+	}
+	return nil
+}
+
+func (c *Config) DeleteCategory(name string) error {
+	if len(c.Categories) <= 1 {
+		return fmt.Errorf("cannot delete the last remaining category")
+	}
+	found := false
+	filtered := c.Categories[:0]
+	for _, cat := range c.Categories {
+		if cat == name {
+			found = true
+		} else {
+			filtered = append(filtered, cat)
+		}
+	}
+	if !found {
+		return fmt.Errorf("category %q not found", name)
+	}
+	c.Categories = filtered
+	if c.AutoCategoryMap != nil {
+		delete(c.AutoCategoryMap, name)
+	}
+	return nil
 }
