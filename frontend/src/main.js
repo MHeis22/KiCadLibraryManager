@@ -45,8 +45,10 @@ const btnSettingsBack = document.getElementById('btn-settings-back');
 // UI Toggle Elements (New)
 const navTabLibs = document.getElementById('nav-tab-libs');
 const navTabSys = document.getElementById('nav-tab-sys');
+const navTabHelp = document.getElementById('nav-tab-help');
 const contentLibs = document.getElementById('content-libs');
 const contentSys = document.getElementById('content-sys');
+const contentHelp = document.getElementById('content-help');
 const btnShowAddRepo = document.getElementById('btn-show-add-repo');
 const addRepoContainer = document.getElementById('add-repo-container');
 const tabLocal = document.getElementById('tab-local');
@@ -300,19 +302,16 @@ async function processNextInQueue() {
 }
 
 // UI Toggles (Tabs & Expanders)
-navTabLibs.addEventListener('click', () => {
-    navTabLibs.classList.add('active');
-    navTabSys.classList.remove('active');
-    contentLibs.classList.add('active');
-    contentSys.classList.remove('active');
-});
+function switchSettingsTab(activeBtn, activeContent) {
+    [navTabLibs, navTabSys, navTabHelp].forEach(b => b.classList.remove('active'));
+    [contentLibs, contentSys, contentHelp].forEach(c => c.classList.remove('active'));
+    activeBtn.classList.add('active');
+    activeContent.classList.add('active');
+}
 
-navTabSys.addEventListener('click', () => {
-    navTabSys.classList.add('active');
-    navTabLibs.classList.remove('active');
-    contentSys.classList.add('active');
-    contentLibs.classList.remove('active');
-});
+navTabLibs.addEventListener('click', () => switchSettingsTab(navTabLibs, contentLibs));
+navTabSys.addEventListener('click', () => switchSettingsTab(navTabSys, contentSys));
+navTabHelp.addEventListener('click', () => switchSettingsTab(navTabHelp, contentHelp));
 
 btnShowAddRepo.addEventListener('click', () => {
     addRepoContainer.classList.toggle('hidden');

@@ -121,6 +121,7 @@
             <div class="tab-nav">
                 <button id="nav-tab-libs" class="tab-btn active">Libraries</button>
                 <button id="nav-tab-sys" class="tab-btn">System & History</button>
+                <button id="nav-tab-help" class="tab-btn">Help</button>
             </div>
 
             <!-- TAB 1: LIBRARIES -->
@@ -171,6 +172,75 @@
                     <!-- Dynamically populated -->
                 </ul>
             </div>
+            <!-- TAB 3: HELP -->
+            <div id="content-help" class="tab-content" style="gap: 0;">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+
+                    <div style="background: rgba(189,147,249,0.08); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;">
+                        <p style="margin: 0; color: var(--text-muted); font-size: 0.88rem; line-height: 1.6;">
+                            <strong style="color: var(--text-main);">KiCad Library Manager</strong> watches a folder for downloaded KiCad components and helps you import them into organized library repositories — locally or via Git.
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">First-Time Setup</h3>
+                        <ol style="margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.8;">
+                            <li>Click <strong style="color: var(--text-main);">Browse</strong> and select your KiCad root library folder (e.g. <code style="background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px;">C:\Users\you\Documents\KiCad\libs</code>).</li>
+                            <li>Click <strong style="color: var(--text-main);">Save &amp; Continue</strong>.</li>
+                            <li>In Settings → Libraries, choose a <strong style="color: var(--text-main);">Watch Folder</strong> — this is where you drop downloaded parts (e.g. your Downloads folder).</li>
+                            <li>Add at least one repository and mark it as default (⭐).</li>
+                        </ol>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">Importing a Component</h3>
+                        <ol style="margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.8;">
+                            <li>Download a KiCad component (e.g. from SnapEDA or Component Search Engine) into the watch folder — or drag &amp; drop it onto the app window.</li>
+                            <li>The app detects it automatically and shows the filename with an analysis summary.</li>
+                            <li>Select the <strong style="color: var(--text-main);">Target Library</strong> and <strong style="color: var(--text-main);">Category</strong> (the app pre-fills a suggestion).</li>
+                            <li>Click <strong style="color: var(--text-main);">OK</strong> to import. The component is copied into the correct repo folder and registered in KiCad's library tables.</li>
+                            <li>Use <strong style="color: var(--text-main);">Skip</strong> to discard the current file, or <strong style="color: var(--text-main);">Hide</strong> to dismiss the window while keeping queued files.</li>
+                        </ol>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">Managing Libraries (Repositories)</h3>
+                        <ul style="margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.8;">
+                            <li><strong style="color: var(--text-main);">Local Folder</strong> — creates a new subfolder inside your KiCad library root for organising parts locally.</li>
+                            <li><strong style="color: var(--text-main);">Git Repository</strong> — clones a remote Git repo (e.g. a shared team library on GitHub). The URL is validated before cloning.</li>
+                            <li>Click ⭐ to set a repository as the default import destination.</li>
+                            <li>Click 🗑️ to remove a repository from the app. <em>Files on disk are not deleted.</em></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">Git Sync</h3>
+                        <ul style="margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.8;">
+                            <li>The <strong style="color: var(--text-main);">↻</strong> button in the main view syncs all Git-backed libraries immediately.</li>
+                            <li>The cloud icon (☁️ / ✅ / ⚠️) shows the current sync state at a glance.</li>
+                            <li>⚠️ means a repo is behind its remote or unreachable — check your internet connection or repo URL.</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">Rollback / Undo</h3>
+                        <ul style="margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.8;">
+                            <li>Settings → System &amp; History shows a log of recent imports.</li>
+                            <li>Click <strong style="color: #ff5555;">Rollback Last</strong> on the most recent entry to undo it. Older entries cannot be individually reverted.</li>
+                            <li>Rollback removes the imported files and restores the previous <code style="background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px;">.kicad_sym</code> library table state.</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;">Autostart</h3>
+                        <p style="margin: 0; color: var(--text-muted); font-size: 0.88rem; line-height: 1.6;">
+                            Enable <strong style="color: var(--text-main);">Run automatically on system startup</strong> in System &amp; History to have the app start silently with Windows and monitor your watch folder in the background.
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+
         </div>
 
     </div>
