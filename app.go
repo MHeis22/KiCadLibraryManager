@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -476,48 +477,11 @@ func (a *App) isValidKiCadItem(path string) bool {
 	return false
 }
 
-func (a *App) ProcessFile(filename string, category string, repoName string) error {
-	fmt.Printf("--> Processing %s into the %s category of %s...\n", filename, category, repoName)
-
-	// --- Phase 1: read config snapshot and persist any new category ---
-	a.mu.Lock()
-	conf := LoadConfig()
-
-	if repoName == "" {
-		if conf.DefaultRepo != "" {
-			repoName = conf.DefaultRepo
-		} else if len(conf.Repositories) > 0 {
-			repoName = conf.Repositories[0].Name
-		} else {
-			repoName = "CustomLibs"
-		}
-	}
-
-	isNew := true
-	for _, c := range conf.Categories {
-		if strings.EqualFold(c, category) {
-			isNew = false
-			break
-		}
-	}
-	if isNew {
-		conf.Categories = append(conf.Categories, category)
-		SaveConfig(conf)
-	}
-
-	baseLibPath := conf.BaseLibPath
-	watchDir := conf.WatchDir
-	a.mu.Unlock()
-
-	// --- Phase 2: heavy file I/O (no lock held) ---
-	fullPath := filename
-	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(watchDir, filename)
-	}
-
+// extractAssets is a helper function to cleanly handle getting files out of a zip or folder.
+func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
-		return fmt.Errorf("cannot access file: %w", err)
+		return nil, "", fmt.Errorf("cannot access file: %w", err)
 	}
 
 	var assets *KiCadAssets
@@ -564,8 +528,127 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	} else {
 		assets, tempDir, err = ExtractAndFind(fullPath)
 		if err != nil {
-			return fmt.Errorf("failed to extract zip: %w", err)
+			return nil, "", fmt.Errorf("failed to extract zip: %w", err)
 		}
+	}
+
+	return assets, tempDir, nil
+}
+
+// CheckConflicts scans the target library locations and checks if any files with matching names already exist.
+func (a *App) CheckConflicts(filename string, category string, repoName string) ([]string, error) {
+	a.mu.Lock()
+	conf := LoadConfig()
+	if repoName == "" {
+		if conf.DefaultRepo != "" {
+			repoName = conf.DefaultRepo
+		} else if len(conf.Repositories) > 0 {
+			repoName = conf.Repositories[0].Name
+		} else {
+			repoName = "CustomLibs"
+		}
+	}
+	baseLibPath := conf.BaseLibPath
+	watchDir := conf.WatchDir
+	a.mu.Unlock()
+
+	if baseLibPath == "" {
+		return nil, fmt.Errorf("base library path is not configured")
+	}
+
+	fullPath := filename
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(watchDir, filename)
+	}
+
+	assets, tempDir, err := extractAssets(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	if tempDir != "" {
+		defer os.RemoveAll(tempDir)
+	}
+
+	targetRepoRoot := filepath.Join(baseLibPath, repoName)
+	var conflicts []string
+
+	if assets.FootprintPath != "" {
+		dest := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category), filepath.Base(assets.FootprintPath))
+		if _, err := os.Stat(dest); err == nil {
+			conflicts = append(conflicts, fmt.Sprintf("Footprint '%s' already exists.", filepath.Base(assets.FootprintPath)))
+		}
+	}
+
+	if assets.ModelPath != "" {
+		dest := filepath.Join(targetRepoRoot, "packages3d", fmt.Sprintf("%s.3dshapes", category), filepath.Base(assets.ModelPath))
+		if _, err := os.Stat(dest); err == nil {
+			conflicts = append(conflicts, fmt.Sprintf("3D Model '%s' already exists.", filepath.Base(assets.ModelPath)))
+		}
+	}
+
+	if assets.SymbolPath != "" {
+		masterSym := filepath.Join(targetRepoRoot, "symbols", fmt.Sprintf("%s.kicad_sym", category))
+		if _, err := os.Stat(masterSym); err == nil {
+			srcBytes, _ := os.ReadFile(assets.SymbolPath)
+			reSymName := regexp.MustCompile(`(?s)\(\s*symbol\s+"([^"]+)"`)
+			match := reSymName.FindStringSubmatch(string(srcBytes))
+			if len(match) > 1 {
+				symName := match[1]
+				masterBytes, _ := os.ReadFile(masterSym)
+				if strings.Contains(string(masterBytes), fmt.Sprintf(`(symbol "%s"`, symName)) {
+					conflicts = append(conflicts, fmt.Sprintf("Symbol '%s' already exists in category '%s'.", symName, category))
+				}
+			}
+		}
+	}
+
+	return conflicts, nil
+}
+
+func (a *App) ProcessFile(filename string, category string, repoName string, conflictStrategy string, newName string) error {
+	fmt.Printf("--> Processing %s into the %s category of %s (Strategy: %s)...\n", filename, category, repoName, conflictStrategy)
+
+	// --- Phase 1: read config snapshot and persist any new category ---
+	a.mu.Lock()
+	conf := LoadConfig()
+
+	if repoName == "" {
+		if conf.DefaultRepo != "" {
+			repoName = conf.DefaultRepo
+		} else if len(conf.Repositories) > 0 {
+			repoName = conf.Repositories[0].Name
+		} else {
+			repoName = "CustomLibs"
+		}
+	}
+
+	isNew := true
+	for _, c := range conf.Categories {
+		if strings.EqualFold(c, category) {
+			isNew = false
+			break
+		}
+	}
+	if isNew {
+		conf.Categories = append(conf.Categories, category)
+		SaveConfig(conf)
+	}
+
+	baseLibPath := conf.BaseLibPath
+	watchDir := conf.WatchDir
+	a.mu.Unlock()
+
+	// --- Phase 2: heavy file I/O (no lock held) ---
+	fullPath := filename
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(watchDir, filename)
+	}
+
+	assets, tempDir, err := extractAssets(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to process file assets: %w", err)
+	}
+	if tempDir != "" {
 		defer os.RemoveAll(tempDir)
 	}
 
@@ -609,7 +692,7 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 		}
 
 		var intErr error
-		addedFiles, master, backup, intErr = IntegrateParts(assets, category, targetRepoRoot, repoName)
+		addedFiles, master, backup, intErr = IntegrateParts(assets, category, targetRepoRoot, repoName, conflictStrategy, newName)
 		if intErr != nil {
 			return fmt.Errorf("integration failed: %w", intErr)
 		}

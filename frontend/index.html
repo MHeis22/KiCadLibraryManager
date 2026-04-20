@@ -110,7 +110,34 @@
             </div>
         </div>
 
-        <!-- VIEW 3: LIBRARY MANAGER & SETTINGS -->
+        <!-- VIEW 3: CONFLICT RESOLUTION -->
+        <div id="conflict-view" class="view hidden">
+            <div class="header-row">
+                <h2 class="title" style="color: #ffb86c;">Conflict Detected</h2>
+            </div>
+            <div style="background: rgba(255,184,108,0.1); border: 1px solid rgba(255,184,108,0.3); border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                <p id="conflict-text" style="color: var(--text-main); margin: 0; font-size: 0.85rem; line-height: 1.5;"></p>
+            </div>
+            
+            <div class="form-group" style="gap: 12px; display: flex; flex-direction: column;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main);">
+                    <input type="radio" name="conflict-action" value="overwrite" checked>
+                    Overwrite existing files
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main);">
+                    <input type="radio" name="conflict-action" value="rename">
+                    Rename imported part
+                </label>
+                <input type="text" id="conflict-new-name" class="hidden" placeholder="New part name (e.g., Cap_100nF_v2)" style="margin-left: 24px; width: calc(100% - 24px); box-sizing: border-box; background: var(--bg-color); color: white; border: 1px solid var(--border); padding: 8px; border-radius: 4px;">
+            </div>
+
+            <div class="actions" style="margin-top: auto;">
+                <button class="btn btn-secondary" id="btn-conflict-cancel">Cancel Import</button>
+                <button class="btn btn-primary" id="btn-conflict-proceed">Proceed</button>
+            </div>
+        </div>
+
+        <!-- VIEW 4: LIBRARY MANAGER & SETTINGS -->
         <div id="settings-view" class="view hidden">
             <div class="header-row" style="align-items: center; margin-bottom: 8px;">
                 <h2 class="title" style="margin-bottom: 0;">Settings</h2>

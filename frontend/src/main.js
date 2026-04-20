@@ -2,6 +2,7 @@ import { Events, Call } from '@wailsio/runtime';
 import {
     GetConfig,
     ProcessFile,
+    CheckConflicts,
     UndoAction,
     SelectDirectory,
     SelectWatchDirectory,
@@ -20,6 +21,7 @@ import {
 const setupView = document.getElementById('setup-view');
 const mainView = document.getElementById('main-view');
 const settingsView = document.getElementById('settings-view');
+const conflictView = document.getElementById('conflict-view');
 
 const libPathInput = document.getElementById('lib-path-input');
 const btnBrowse = document.getElementById('btn-browse');
@@ -41,6 +43,12 @@ const btnSyncNow = document.getElementById('btn-sync-now');
 const autostartToggle = document.getElementById('autostart-toggle');
 const historyList = document.getElementById('history-list');
 const btnSettingsBack = document.getElementById('btn-settings-back');
+
+// Conflict UI Elements
+const conflictText = document.getElementById('conflict-text');
+const conflictNewName = document.getElementById('conflict-new-name');
+const btnConflictCancel = document.getElementById('btn-conflict-cancel');
+const btnConflictProceed = document.getElementById('btn-conflict-proceed');
 
 // UI Toggle Elements (New)
 const navTabLibs = document.getElementById('nav-tab-libs');
@@ -83,7 +91,7 @@ async function loadConfig() {
         if (!currentConfig.baseLibPath) {
             switchView(setupView);
         } else {
-            if (settingsView.classList.contains('hidden') && fileQueue.length === 0) {
+            if (settingsView.classList.contains('hidden') && conflictView.classList.contains('hidden') && fileQueue.length === 0) {
                 switchView(mainView);
             }
             watchDirInput.value = currentConfig.watchDir || "";
@@ -98,7 +106,9 @@ async function loadConfig() {
 }
 
 function switchView(activeView) {
-    [setupView, mainView, settingsView].forEach(view => view.classList.add('hidden'));
+    [setupView, mainView, settingsView, conflictView].forEach(view => {
+        if(view) view.classList.add('hidden');
+    });
     activeView.classList.remove('hidden');
 }
 
@@ -426,6 +436,29 @@ selectCategory.addEventListener('change', (e) => {
     }
 });
 
+// Centralized strategy processing helper
+async function processItemWithStrategy(strategy, newName) {
+    let currentFilename = fileQueue[0];
+    let chosenCategory = selectCategory.value === "ADD_NEW" ? newCategoryInput.value.trim() : selectCategory.value;
+    let chosenRepo = repositorySelect.value;
+
+    btnConflictProceed.disabled = true;
+    btnOk.disabled = true;
+    
+    try {
+        await ProcessFile(currentFilename, chosenCategory, chosenRepo, strategy, newName);
+        fileQueue.shift(); 
+        await loadConfig();
+        selectCategory.value = chosenCategory; 
+        await processNextInQueue(); 
+    } catch (err) {
+        alert("Processing Error: " + err);
+    } finally {
+        btnConflictProceed.disabled = false;
+        btnOk.disabled = false;
+    }
+}
+
 btnOk.addEventListener('click', async () => {
     if (fileQueue.length === 0) return;
 
@@ -443,18 +476,58 @@ btnOk.addEventListener('click', async () => {
     }
     
     btnOk.disabled = true;
-    
+
     try {
-        await ProcessFile(currentFilename, chosenCategory, chosenRepo);
-        fileQueue.shift(); 
-        await loadConfig();
-        selectCategory.value = chosenCategory; 
-        await processNextInQueue(); 
+        const conflicts = await CheckConflicts(currentFilename, chosenCategory, chosenRepo);
+        if (conflicts && conflicts.length > 0) {
+            conflictText.innerHTML = `<strong>File collision detected:</strong><br>• ` + conflicts.join('<br>• ');
+            document.querySelector('input[name="conflict-action"][value="overwrite"]').checked = true;
+            conflictNewName.classList.add('hidden');
+            conflictNewName.value = '';
+            switchView(conflictView);
+            btnOk.disabled = false; 
+            return; 
+        }
+
+        // Fast path: No conflicts
+        await processItemWithStrategy("overwrite", "");
     } catch (err) {
-        alert("Processing Error: " + err);
+        alert("Error verifying component: " + err);
         btnOk.disabled = false;
     }
 });
+
+// Conflict UI Event Listeners
+document.querySelectorAll('input[name="conflict-action"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        if (e.target.value === 'rename') {
+            conflictNewName.classList.remove('hidden');
+            conflictNewName.focus();
+        } else {
+            conflictNewName.classList.add('hidden');
+        }
+    });
+});
+
+btnConflictProceed.addEventListener('click', async () => {
+    const strategy = document.querySelector('input[name="conflict-action"]:checked').value;
+    const newName = conflictNewName.value.trim();
+
+    if (strategy === 'rename' && !newName) {
+        conflictNewName.style.borderColor = 'red';
+        setTimeout(() => conflictNewName.style.borderColor = '', 2000);
+        return;
+    }
+
+    await processItemWithStrategy(strategy, newName);
+});
+
+btnConflictCancel.addEventListener('click', async () => {
+    fileQueue.shift(); 
+    await SkipFile(fileQueue[0]); 
+    await processNextInQueue(); 
+});
+
 
 document.getElementById('btn-skip').addEventListener('click', async () => {
     if (fileQueue.length > 0) {

@@ -20,11 +20,24 @@ export function AddRepository(name, url) {
 }
 
 /**
+ * CheckConflicts scans the target library locations and checks if any files with matching names already exist.
+ * @param {string} filename
+ * @param {string} category
+ * @param {string} repoName
+ * @returns {$CancellablePromise<string[]>}
+ */
+export function CheckConflicts(filename, category, repoName) {
+    return $Call.ByID(2224678442, filename, category, repoName).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.Config>}
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -63,10 +76,12 @@ export function HideWindow() {
  * @param {string} filename
  * @param {string} category
  * @param {string} repoName
+ * @param {string} conflictStrategy
+ * @param {string} newName
  * @returns {$CancellablePromise<void>}
  */
-export function ProcessFile(filename, category, repoName) {
-    return $Call.ByID(3913388868, filename, category, repoName);
+export function ProcessFile(filename, category, repoName, conflictStrategy, newName) {
+    return $Call.ByID(3913388868, filename, category, repoName, conflictStrategy, newName);
 }
 
 /**
@@ -153,4 +168,5 @@ export function UndoAction(id) {
 }
 
 // Private type creation functions
-const $$createType0 = $models.Config.createFrom;
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = $models.Config.createFrom;

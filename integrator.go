@@ -14,7 +14,7 @@ import (
 var kicadVersionRegex = regexp.MustCompile(`^\d+(\.\d+)*$`)
 
 // IntegrateParts moves extracted assets and returns tracking info for Undo functionality
-func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string, repoName string) ([]string, string, string, error) {
+func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string, repoName string, conflictStrategy string, newName string) ([]string, string, string, error) {
 
 	prettyFolder := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
 	shapesFolder := filepath.Join(targetRepoRoot, "packages3d", fmt.Sprintf("%s.3dshapes", category))
@@ -34,7 +34,12 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 
 	// 1. Handle 3D Models
 	if assets.ModelPath != "" {
-		finalModelName = filepath.Base(assets.ModelPath)
+		if conflictStrategy == "rename" && newName != "" {
+			finalModelName = newName + filepath.Ext(assets.ModelPath)
+		} else {
+			finalModelName = filepath.Base(assets.ModelPath)
+		}
+
 		destModelPath := filepath.Join(shapesFolder, finalModelName)
 		if err := copyFile(assets.ModelPath, destModelPath); err != nil {
 			fmt.Println("Warning: failed to copy 3D model:", err)
@@ -47,8 +52,13 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 	// 2. Handle Footprints
 	var finalFootprintName string
 	if assets.FootprintPath != "" {
-		finalFootprintName = strings.TrimSuffix(filepath.Base(assets.FootprintPath), ".kicad_mod")
-		destFootprintPath := filepath.Join(prettyFolder, filepath.Base(assets.FootprintPath))
+		baseName := filepath.Base(assets.FootprintPath)
+		if conflictStrategy == "rename" && newName != "" {
+			baseName = newName + ".kicad_mod"
+		}
+
+		finalFootprintName = strings.TrimSuffix(baseName, ".kicad_mod")
+		destFootprintPath := filepath.Join(prettyFolder, baseName)
 
 		var fpErr error
 		if finalModelName != "" {
@@ -79,7 +89,7 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			}
 		}
 
-		if err := injectSymbol(assets.SymbolPath, masterSym, category, finalFootprintName, repoName); err != nil {
+		if err := injectSymbol(assets.SymbolPath, masterSym, category, finalFootprintName, repoName, conflictStrategy, newName); err != nil {
 			// Roll back the backup so we don't leave a stale .bak file
 			if masterExisted {
 				os.Rename(backupSym, masterSym)
@@ -161,7 +171,7 @@ func InitializeKiCadLibraries(conf Config) {
 	}
 }
 
-func injectSymbol(sourceFile, masterFile, category, footprintName, repoName string) error {
+func injectSymbol(sourceFile, masterFile, category, footprintName, repoName string, conflictStrategy string, newName string) error {
 	srcBytes, err := os.ReadFile(sourceFile)
 	if err != nil {
 		return err
@@ -179,6 +189,19 @@ func injectSymbol(sourceFile, masterFile, category, footprintName, repoName stri
 		return fmt.Errorf("malformed source symbol file")
 	}
 	extractedSymbol := strings.TrimSpace(match[:lastParenIdx])
+
+	// Handle internal KiCad S-Expression Renaming safely
+	if conflictStrategy == "rename" && newName != "" {
+		reNameExtract := regexp.MustCompile(`\(\s*symbol\s+"([^"]+)"`)
+		nameMatch := reNameExtract.FindStringSubmatch(srcContent)
+		if len(nameMatch) > 1 {
+			oldName := nameMatch[1]
+			// Replace the exact quoted name matching the old symbol
+			extractedSymbol = strings.ReplaceAll(extractedSymbol, `"`+oldName+`"`, `"`+newName+`"`)
+			// Safely handle KiCad's internal sub-symbol linking syntax (e.g. "OldName_0_1")
+			extractedSymbol = strings.ReplaceAll(extractedSymbol, `"`+oldName+`_`, `"`+newName+`_`)
+		}
+	}
 
 	if footprintName != "" {
 		reFootprintProp := regexp.MustCompile(`\(property\s+"Footprint"\s+"[^"]*"`)
