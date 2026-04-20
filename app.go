@@ -598,9 +598,12 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	a.mu.Lock()
 	conf = LoadConfig() // reload so we don't clobber concurrent changes
 	conf.History = append(conf.History, newItem)
-	if len(conf.History) > 5 {
-		conf.History = conf.History[len(conf.History)-5:]
+
+	// Increased history size to 10 entries instead of 5
+	if len(conf.History) > 10 {
+		conf.History = conf.History[len(conf.History)-10:]
 	}
+
 	if err := SaveConfig(conf); err != nil {
 		fmt.Println("Warning: failed to save config:", err)
 	}

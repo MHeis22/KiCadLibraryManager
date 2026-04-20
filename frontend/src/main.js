@@ -154,7 +154,7 @@ function populateHistory(historyItems) {
 
     const reversed = [...historyItems].reverse();
 
-    reversed.forEach(item => {
+    reversed.forEach((item, index) => {
         let li = document.createElement('li');
         li.className = 'history-item';
         
@@ -162,23 +162,34 @@ function populateHistory(historyItems) {
         txt.className = 'history-text';
         txt.innerText = `${item.filename} → ${item.category}`;
         txt.title = `Imported to ${item.repoName} on ${new Date(item.timestamp * 1000).toLocaleString()}`;
-
-        let btn = document.createElement('button');
-        btn.className = 'btn-undo';
-        btn.innerText = 'Undo';
-        btn.onclick = async () => {
-            if (confirm(`Are you sure you want to rollback the import of ${item.filename}?`)) {
-                const success = await UndoAction(item.id);
-                if (success) {
-                    await loadConfig();
-                } else {
-                    alert("Undo failed. The files may have been moved or deleted manually.");
-                }
-            }
-        };
-
+        
         li.appendChild(txt);
-        li.appendChild(btn);
+
+        // Only allow rollback on the very latest import to ensure sym-lib .bak integrity
+        if (index === 0) {
+            let btn = document.createElement('button');
+            btn.className = 'btn-undo';
+            btn.innerText = 'Rollback Last';
+            btn.onclick = async () => {
+                if (confirm(`Are you sure you want to rollback the most recent import: ${item.filename}?`)) {
+                    const success = await UndoAction(item.id);
+                    if (success) {
+                        await loadConfig();
+                    } else {
+                        alert("Undo failed. The files may have been moved or deleted manually.");
+                    }
+                }
+            };
+            li.appendChild(btn);
+        } else {
+            // Just show the time for older items in the history log
+            let timeSpan = document.createElement('span');
+            timeSpan.style.color = "var(--text-muted)";
+            timeSpan.style.fontSize = "0.75rem";
+            timeSpan.innerText = new Date(item.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            li.appendChild(timeSpan);
+        }
+
         historyList.appendChild(li);
     });
 }
