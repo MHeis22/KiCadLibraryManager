@@ -2,10 +2,10 @@
 set -e
 
 # Build configuration
-APP_NAME="librarymanagerw3.exe"
-BUNDLE_ID="com.example.librarymanagerw3"
-VERSION="0.1.0"
-BUILD_NUMBER="0.1.0"
+APP_NAME="KiCadLibraryManager"
+BUNDLE_ID="com.kicadlibmgr.app"
+VERSION="1.1.2"
+BUILD_NUMBER="1.1.2"
 BUILD_DIR="build/ios"
 TARGET="simulator"
 

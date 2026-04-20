@@ -1,15 +1,15 @@
 {
 	"fixed": {
-		"file_version": "0.1.0"
+		"file_version": "1.1.2"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "0.1.0",
-			"CompanyName": "My Company",
-			"FileDescription": "A LibraryManagerW3 application",
-			"LegalCopyright": "© 2026, My Company",
-			"ProductName": "My Product",
-			"Comments": "This is a comment"
+			"ProductVersion": "1.1.2",
+			"CompanyName": "KiCad Library Manager",
+			"FileDescription": "Automatic KiCad Component Library Manager",
+			"LegalCopyright": "(c) 2025, KiCad Library Manager",
+			"ProductName": "KiCad Library Manager",
+			"Comments": "Automatically imports and organises KiCad component libraries"
 		}
 	}
 }

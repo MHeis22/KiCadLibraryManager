@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
-Name=My Product
-Comment=A LibraryManagerW3 application
+Name=KiCad Library Manager
+Comment=Automatic KiCad Component Library Manager
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/librarymanagerw3.exe %u
+Exec=/usr/local/bin/KiCadLibraryManager %u
 Terminal=false
 Type=Application
-Icon=librarymanagerw3.exe
+Icon=KiCadLibraryManager
 Categories=Utility;
-StartupWMClass=librarymanagerw3.exe
+StartupWMClass=KiCadLibraryManager
 
  

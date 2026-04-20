@@ -4,16 +4,26 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
+
+// gitCommand is a helper that wraps exec.Command to ensure the Windows command
+// prompt does not flash visibly every time a background Git operation runs.
+func gitCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	// HideWindow prevents the console flash on Windows.
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
 
 // isGitRepository returns true if the path is inside a git repository.
 func isGitRepository(path string) bool {
-	return exec.Command("git", "-C", path, "rev-parse", "--git-dir").Run() == nil
+	return gitCommand("-C", path, "rev-parse", "--git-dir").Run() == nil
 }
 
 // ValidateGitURL runs git ls-remote to confirm the URL is a reachable Git remote.
 func ValidateGitURL(url string) error {
-	out, err := exec.Command("git", "ls-remote", url).CombinedOutput()
+	out, err := gitCommand("ls-remote", url).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
@@ -27,7 +37,7 @@ func ValidateGitURL(url string) error {
 // GitClone downloads a remote repository into the target directory.
 func GitClone(url string, destPath string) error {
 	fmt.Printf("--> Cloning repository: %s\n", url)
-	out, err := exec.Command("git", "clone", url, destPath).CombinedOutput()
+	out, err := gitCommand("clone", url, destPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
@@ -42,12 +52,12 @@ func GitPull(repoPath string) error {
 	}
 
 	// Abort if there are uncommitted local changes
-	statusOut, _ := exec.Command("git", "-C", repoPath, "status", "--porcelain").Output()
+	statusOut, _ := gitCommand("-C", repoPath, "status", "--porcelain").Output()
 	if strings.TrimSpace(string(statusOut)) != "" {
 		return fmt.Errorf("repo has uncommitted local changes — please resolve manually before syncing")
 	}
 
-	out, err := exec.Command("git", "-C", repoPath, "pull", "--rebase").CombinedOutput()
+	out, err := gitCommand("-C", repoPath, "pull", "--rebase").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("pull failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -64,11 +74,11 @@ func GitCommitAndPush(repoPath, commitMessage string) (bool, error) {
 		return true, nil
 	}
 
-	if err := exec.Command("git", "-C", repoPath, "add", ".").Run(); err != nil {
+	if err := gitCommand("-C", repoPath, "add", ".").Run(); err != nil {
 		return false, fmt.Errorf("git add failed: %w", err)
 	}
 
-	commitOut, commitErr := exec.Command("git", "-C", repoPath, "commit", "-m", commitMessage).CombinedOutput()
+	commitOut, commitErr := gitCommand("-C", repoPath, "commit", "-m", commitMessage).CombinedOutput()
 	if commitErr != nil {
 		if strings.Contains(string(commitOut), "nothing to commit") {
 			fmt.Println("    [Git] Nothing to commit.")
@@ -78,7 +88,7 @@ func GitCommitAndPush(repoPath, commitMessage string) (bool, error) {
 	}
 	fmt.Printf("    [Git] Committed: %q\n", commitMessage)
 
-	if err := exec.Command("git", "-C", repoPath, "push").Run(); err != nil {
+	if err := gitCommand("-C", repoPath, "push").Run(); err != nil {
 		fmt.Println("    [Git] Push rejected by remote — will retry.")
 		return false, nil
 	}
@@ -89,7 +99,7 @@ func GitCommitAndPush(repoPath, commitMessage string) (bool, error) {
 
 // GitResetLastCommit hard-resets the working directory to HEAD~1, undoing the last commit.
 func GitResetLastCommit(repoPath string) error {
-	return exec.Command("git", "-C", repoPath, "reset", "--hard", "HEAD~1").Run()
+	return gitCommand("-C", repoPath, "reset", "--hard", "HEAD~1").Run()
 }
 
 // GitFetchAndCheckStatus fetches from remote and returns whether the local branch
@@ -100,13 +110,13 @@ func GitFetchAndCheckStatus(repoPath string) (behind bool, err error) {
 	}
 
 	// Non-destructive: updates remote tracking refs without touching the working tree
-	exec.Command("git", "-C", repoPath, "fetch", "--quiet").Run()
+	gitCommand("-C", repoPath, "fetch", "--quiet").Run()
 
-	localHead, err := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD").Output()
+	localHead, err := gitCommand("-C", repoPath, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return false, nil
 	}
-	remoteHead, err := exec.Command("git", "-C", repoPath, "rev-parse", "@{u}").Output()
+	remoteHead, err := gitCommand("-C", repoPath, "rev-parse", "@{u}").Output()
 	if err != nil {
 		return false, nil // No upstream configured — not considered behind
 	}

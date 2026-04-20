@@ -1,69 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-    <dict>
-        <key>CFBundlePackageType</key>
-        <string>APPL</string>
-        <key>CFBundleName</key>
-        <string>{{.Info.ProductName}}</string>
-        <key>CFBundleExecutable</key>
-        <string>{{.OutputFilename}}</string>
-        <key>CFBundleIdentifier</key>
-        <string>com.wails.{{.Name}}</string>
-        <key>CFBundleVersion</key>
-        <string>{{.Info.ProductVersion}}</string>
-        <key>CFBundleGetInfoString</key>
-        <string>{{.Info.Comments}}</string>
-        <key>CFBundleShortVersionString</key>
-        <string>{{.Info.ProductVersion}}</string>
-        <key>CFBundleIconFile</key>
-        <string>iconfile</string>
-        <key>LSMinimumSystemVersion</key>
-        <string>10.13.0</string>
-        <key>NSHighResolutionCapable</key>
-        <string>true</string>
-        <key>NSHumanReadableCopyright</key>
-        <string>{{.Info.Copyright}}</string>
-        {{if .Info.FileAssociations}}
-        <key>CFBundleDocumentTypes</key>
-        <array>
-          {{range .Info.FileAssociations}}
-          <dict>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-              <string>{{.Ext}}</string>
-            </array>
-            <key>CFBundleTypeName</key>
-            <string>{{.Name}}</string>
-            <key>CFBundleTypeRole</key>
-            <string>{{.Role}}</string>
-            <key>CFBundleTypeIconFile</key>
-            <string>{{.IconName}}</string>
-          </dict>
-          {{end}}
-        </array>
-        {{end}}
-        {{if .Info.Protocols}}
-        <key>CFBundleURLTypes</key>
-        <array>
-          {{range .Info.Protocols}}
-            <dict>
-                <key>CFBundleURLName</key>
-                <string>com.wails.{{.Scheme}}</string>
-                <key>CFBundleURLSchemes</key>
-                <array>
-                    <string>{{.Scheme}}</string>
-                </array>
-                <key>CFBundleTypeRole</key>
-                <string>{{.Role}}</string>
-            </dict>
-          {{end}}
-        </array>
-        {{end}}
-        <key>LSUIElement</key>
-          <true/>
-        <key>NSDownloadsFolderUsageDescription</key>
-          <string>This app needs access to your Downloads folder to detect newly downloaded KiCad libraries.</string>
-        <key>NSDocumentsFolderUsageDescription</key>
-          <string>This app needs access to your Documents folder to manage your KiCad library repository.</string>
-    </dict>
+	<dict>
+		<key>CFBundleDocumentTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeExtensions</key>
+				<array>
+					<string>{{.Ext}}</string>
+				</array>
+				<key>CFBundleTypeIconFile</key>
+				<string>{{.IconName}}</string>
+				<key>CFBundleTypeName</key>
+				<string>{{.Name}}</string>
+				<key>CFBundleTypeRole</key>
+				<string>{{.Role}}</string>
+			</dict>
+		</array>
+		<key>CFBundleExecutable</key>
+		<string>KiCadLibraryManager</string>
+		<key>CFBundleGetInfoString</key>
+		<string>Automatically imports and organises KiCad component libraries</string>
+		<key>CFBundleIconFile</key>
+		<string>icons</string>
+		<key>CFBundleIconName</key>
+		<string>appicon</string>
+		<key>CFBundleIdentifier</key>
+		<string>com.kicadlibmgr.app</string>
+		<key>CFBundleName</key>
+		<string>KiCad Library Manager</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>1.1.2</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>{{.Role}}</string>
+				<key>CFBundleURLName</key>
+				<string>com.wails.{{.Scheme}}</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>{{.Scheme}}</string>
+				</array>
+			</dict>
+		</array>
+		<key>CFBundleVersion</key>
+		<string>1.1.2</string>
+		<key>LSMinimumSystemVersion</key>
+		<string>10.15.0</string>
+		<key>LSUIElement</key>
+		<true/>
+		<key>NSDocumentsFolderUsageDescription</key>
+		<string>This app needs access to your Documents folder to manage your KiCad library repository.</string>
+		<key>NSDownloadsFolderUsageDescription</key>
+		<string>This app needs access to your Downloads folder to detect newly downloaded KiCad libraries.</string>
+		<key>NSHighResolutionCapable</key>
+		<string>true</string>
+		<key>NSHumanReadableCopyright</key>
+		<string>(c) 2025, KiCad Library Manager</string>
+	</dict>
 </plist>
