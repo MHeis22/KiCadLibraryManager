@@ -3,61 +3,113 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
-// GitClone downloads a remote repository into the target directory
-func GitClone(url string, destPath string) error {
-	fmt.Printf("--> Cloning repository: %s\n", url)
-	cmd := exec.Command("git", "clone", url, destPath)
-	return cmd.Run()
+// isGitRepository returns true if the path is inside a git repository.
+func isGitRepository(path string) bool {
+	return exec.Command("git", "-C", path, "rev-parse", "--git-dir").Run() == nil
 }
 
-// GitSmartSync executes the Stash -> Pull (Rebase) -> Pop -> Add -> Commit -> Push flow
-func GitSmartSync(repoPath string, commitMessage string) {
-	fmt.Println("--> Initiating Smart Git Sync for:", repoPath)
-
-	// 1. Check if it's a git repo
-	if err := exec.Command("git", "-C", repoPath, "status").Run(); err != nil {
-		fmt.Println("    [Git] Not a git repository. Skipping sync.")
-		return
-	}
-
-	// 2. Stash any uncommitted changes (like the part we just generated)
-	if err := exec.Command("git", "-C", repoPath, "stash").Run(); err != nil {
-		// exit code 1 means "nothing to stash" — that's fine; any other failure is real
-		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
-			fmt.Println("    [Git Warning] Stash failed:", err)
+// ValidateGitURL runs git ls-remote to confirm the URL is a reachable Git remote.
+func ValidateGitURL(url string) error {
+	out, err := exec.Command("git", "ls-remote", url).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
 		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+// GitClone downloads a remote repository into the target directory.
+func GitClone(url string, destPath string) error {
+	fmt.Printf("--> Cloning repository: %s\n", url)
+	out, err := exec.Command("git", "clone", url, destPath).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// GitPull checks for a clean working directory and runs git pull --rebase.
+// Returns nil for non-git repos (silently skipped).
+func GitPull(repoPath string) error {
+	if !isGitRepository(repoPath) {
+		return nil
 	}
 
-	// 3. Pull with rebase to safely apply teammates' changes first
-	if err := exec.Command("git", "-C", repoPath, "pull", "--rebase").Run(); err != nil {
-		fmt.Println("    [Git Warning] Pull failed (Offline?). Proceeding with local commit.")
+	// Abort if there are uncommitted local changes
+	statusOut, _ := exec.Command("git", "-C", repoPath, "status", "--porcelain").Output()
+	if strings.TrimSpace(string(statusOut)) != "" {
+		return fmt.Errorf("repo has uncommitted local changes — please resolve manually before syncing")
 	}
 
-	// 4. Pop the stash to put our new part back on top
-	if err := exec.Command("git", "-C", repoPath, "stash", "pop").Run(); err != nil {
-		fmt.Println("    [Git ERROR] Stash pop failed — local changes may be lost:", err)
+	out, err := exec.Command("git", "-C", repoPath, "pull", "--rebase").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pull failed: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// GitCommitAndPush stages all changes, commits, and pushes to remote.
+// Returns (pushed=true, nil) on success or when there is nothing to commit.
+// Returns (pushed=false, nil) if push was rejected by remote (signal for retry).
+// Returns (false, non-nil) on hard failures (add or commit errors).
+// Returns (true, nil) for non-git repos.
+func GitCommitAndPush(repoPath, commitMessage string) (bool, error) {
+	if !isGitRepository(repoPath) {
+		return true, nil
 	}
 
-	// 5. Add all changes
 	if err := exec.Command("git", "-C", repoPath, "add", ".").Run(); err != nil {
-		fmt.Println("    [Git Error] Failed to 'git add':", err)
-		return
+		return false, fmt.Errorf("git add failed: %w", err)
 	}
 
-	// 6. Commit changes
-	if err := exec.Command("git", "-C", repoPath, "commit", "-m", commitMessage).Run(); err != nil {
-		fmt.Println("    [Git] No changes to commit.")
-		return
+	commitOut, commitErr := exec.Command("git", "-C", repoPath, "commit", "-m", commitMessage).CombinedOutput()
+	if commitErr != nil {
+		if strings.Contains(string(commitOut), "nothing to commit") {
+			fmt.Println("    [Git] Nothing to commit.")
+			return true, nil
+		}
+		return false, fmt.Errorf("git commit failed: %s", strings.TrimSpace(string(commitOut)))
 	}
-	fmt.Printf("    [Git] Committed changes: \"%s\"\n", commitMessage)
+	fmt.Printf("    [Git] Committed: %q\n", commitMessage)
 
-	// 7. Push to remote
 	if err := exec.Command("git", "-C", repoPath, "push").Run(); err != nil {
-		fmt.Println("    [Git Warning] Failed to push. Changes are saved locally.")
-		return
+		fmt.Println("    [Git] Push rejected by remote — will retry.")
+		return false, nil
 	}
 
-	fmt.Println("    [Git] Successfully synchronized with remote repository!")
+	fmt.Println("    [Git] Successfully synchronized with remote repository.")
+	return true, nil
+}
+
+// GitResetLastCommit hard-resets the working directory to HEAD~1, undoing the last commit.
+func GitResetLastCommit(repoPath string) error {
+	return exec.Command("git", "-C", repoPath, "reset", "--hard", "HEAD~1").Run()
+}
+
+// GitFetchAndCheckStatus fetches from remote and returns whether the local branch
+// is behind its upstream tracking ref.
+func GitFetchAndCheckStatus(repoPath string) (behind bool, err error) {
+	if !isGitRepository(repoPath) {
+		return false, nil
+	}
+
+	// Non-destructive: updates remote tracking refs without touching the working tree
+	exec.Command("git", "-C", repoPath, "fetch", "--quiet").Run()
+
+	localHead, err := exec.Command("git", "-C", repoPath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return false, nil
+	}
+	remoteHead, err := exec.Command("git", "-C", repoPath, "rev-parse", "@{u}").Output()
+	if err != nil {
+		return false, nil // No upstream configured — not considered behind
+	}
+
+	return strings.TrimSpace(string(localHead)) != strings.TrimSpace(string(remoteHead)), nil
 }

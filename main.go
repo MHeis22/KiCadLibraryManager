@@ -27,7 +27,7 @@ func main() {
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:          "KiCad Library Manager",
 		Width:          500,
-		Height:         660,
+		Height:         800,
 		Hidden:         true,
 		EnableFileDrop: true, // Required for Wails v3 to accept file drops
 	})

@@ -44,6 +44,78 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 
 	InitializeKiCadLibraries(conf) // Ensure the base library structure exists before starting the watcher
 	a.StartWatcher()
+	a.startSyncPoller()
+	return nil
+}
+
+// startSyncPoller runs a background goroutine that checks remote sync status every 15 minutes.
+func (a *App) startSyncPoller() {
+	go func() {
+		// Emit an initial status shortly after startup so the icon has a value
+		time.Sleep(5 * time.Second)
+		a.pollSyncStatus()
+
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			a.pollSyncStatus()
+		}
+	}()
+}
+
+// pollSyncStatus fetches from all git remotes and emits a sync-status event.
+func (a *App) pollSyncStatus() {
+	conf := LoadConfig()
+	if conf.BaseLibPath == "" {
+		return
+	}
+
+	anyBehind := false
+	for _, repo := range conf.Repositories {
+		if repo.URL == "" {
+			continue
+		}
+		repoPath := filepath.Join(conf.BaseLibPath, repo.Name)
+		behind, _ := GitFetchAndCheckStatus(repoPath)
+		if behind {
+			anyBehind = true
+			break
+		}
+	}
+
+	if anyBehind {
+		a.app.Event.Emit("sync-status", "warning")
+	} else {
+		a.app.Event.Emit("sync-status", "synced")
+	}
+}
+
+// SyncAllRepositories runs git pull --rebase on every git-backed repository.
+func (a *App) SyncAllRepositories() error {
+	a.app.Event.Emit("sync-status", "syncing")
+
+	conf := LoadConfig()
+	if conf.BaseLibPath == "" {
+		return fmt.Errorf("base library path not configured")
+	}
+
+	var errs []string
+	for _, repo := range conf.Repositories {
+		if repo.URL == "" {
+			continue
+		}
+		repoPath := filepath.Join(conf.BaseLibPath, repo.Name)
+		if err := GitPull(repoPath); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", repo.Name, err))
+		}
+	}
+
+	if len(errs) > 0 {
+		a.app.Event.Emit("sync-status", "warning")
+		return fmt.Errorf("some repositories failed to sync: %s", strings.Join(errs, "; "))
+	}
+
+	a.app.Event.Emit("sync-status", "synced")
 	return nil
 }
 
@@ -230,6 +302,10 @@ func (a *App) AddRepository(name string, url string) error {
 	destPath := filepath.Join(conf.BaseLibPath, name)
 
 	if url != "" {
+		fmt.Printf("--> Validating Git URL: %s\n", url)
+		if err := ValidateGitURL(url); err != nil {
+			return fmt.Errorf("cannot reach Git repository: %w", err)
+		}
 		if err := GitClone(url, destPath); err != nil {
 			return fmt.Errorf("failed to clone repository: %w", err)
 		}
@@ -441,15 +517,73 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	}
 
 	targetRepoRoot := filepath.Join(baseLibPath, repoName)
+	commitMsg := fmt.Sprintf("Added new part from %s into %s", filepath.Base(fullPath), category)
 
-	addedFiles, master, backup, err := IntegrateParts(assets, category, targetRepoRoot, repoName)
-	if err != nil {
-		return fmt.Errorf("integration failed: %w", err)
+	// --- Phase 2.5: Pre-emptive pull to minimise the conflict window ---
+	isGit := isGitRepository(targetRepoRoot)
+	if isGit {
+		a.app.Event.Emit("sync-status", "syncing")
+		if pullErr := GitPull(targetRepoRoot); pullErr != nil {
+			fmt.Printf("    [Git Warning] Pre-emptive pull skipped: %v. Proceeding in local-only mode.\n", pullErr)
+			a.app.Event.Emit("sync-status", "warning")
+			isGit = false
+		}
+	}
+
+	// --- Phase 3: Integrate → Commit → Push, with retry on push rejection ---
+	const maxPushRetries = 3
+	var addedFiles []string
+	var master, backup string
+	pushed := false
+
+	for attempt := 0; attempt < maxPushRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("    [Git] Push rejected, retrying (%d/%d)...\n", attempt, maxPushRetries-1)
+			a.app.Event.Emit("sync-status", "syncing")
+
+			if resetErr := GitResetLastCommit(targetRepoRoot); resetErr != nil {
+				fmt.Printf("    [Git Error] Reset failed: %v. Saving locally.\n", resetErr)
+				break
+			}
+			if pullErr := GitPull(targetRepoRoot); pullErr != nil {
+				fmt.Printf("    [Git Warning] Re-pull failed: %v. Saving locally.\n", pullErr)
+				break
+			}
+		}
+
+		var intErr error
+		addedFiles, master, backup, intErr = IntegrateParts(assets, category, targetRepoRoot, repoName)
+		if intErr != nil {
+			return fmt.Errorf("integration failed: %w", intErr)
+		}
+
+		if !isGit {
+			pushed = true
+			break
+		}
+
+		var pushErr error
+		pushed, pushErr = GitCommitAndPush(targetRepoRoot, commitMsg)
+		if pushErr != nil {
+			return fmt.Errorf("git sync error: %w", pushErr)
+		}
+		if pushed {
+			break
+		}
+	}
+
+	if isGit {
+		if pushed {
+			a.app.Event.Emit("sync-status", "synced")
+		} else {
+			fmt.Printf("    [Git Warning] Could not push after %d attempts. Changes saved locally.\n", maxPushRetries)
+			a.app.Event.Emit("sync-status", "warning")
+		}
 	}
 
 	fmt.Println("--> Successfully integrated parts into", repoName)
 
-	// --- Phase 3: lock again to append history and save ---
+	// --- Phase 4: lock again to append history and save ---
 	newItem := HistoryItem{
 		ID:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp:    time.Now().Unix(),
@@ -471,9 +605,6 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 		fmt.Println("Warning: failed to save config:", err)
 	}
 	a.mu.Unlock()
-
-	commitMsg := fmt.Sprintf("Added new part from %s into %s", filepath.Base(fullPath), category)
-	go GitSmartSync(targetRepoRoot, commitMsg)
 
 	if !filepath.IsAbs(filename) {
 		os.Remove(fullPath)

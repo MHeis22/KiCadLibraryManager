@@ -107,6 +107,14 @@ export function StartWatcher() {
 }
 
 /**
+ * SyncAllRepositories runs git pull --rebase on every git-backed repository.
+ * @returns {$CancellablePromise<void>}
+ */
+export function SyncAllRepositories() {
+    return $Call.ByID(2668055061);
+}
+
+/**
  * ToggleAutoStart adds or removes the app from the Windows Registry Run key.
  * Using the Registry is locale-independent; the "Start Menu" folder path is
  * localised on non-English Windows and must not be hardcoded.

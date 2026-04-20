@@ -1,4 +1,4 @@
-import { Events } from '@wailsio/runtime';
+import { Events, Call } from '@wailsio/runtime';
 import {
     GetConfig,
     ProcessFile,
@@ -34,9 +34,13 @@ const btnOk = document.getElementById('btn-ok');
 const watchDirInput = document.getElementById('watch-dir-input');
 const btnBrowseWatch = document.getElementById('btn-browse-watch');
 const repoList = document.getElementById('repo-list');
-const newRepoName = document.getElementById('new-repo-name');
-const newRepoUrl = document.getElementById('new-repo-url');
-const btnAddRepo = document.getElementById('btn-add-repo');
+const newLocalName = document.getElementById('new-local-name');
+const btnAddLocal = document.getElementById('btn-add-local');
+const newGitUrl = document.getElementById('new-git-url');
+const newGitName = document.getElementById('new-git-name');
+const btnAddGit = document.getElementById('btn-add-git');
+const syncStatusIcon = document.getElementById('sync-status-icon');
+const btnSyncNow = document.getElementById('btn-sync-now');
 const autostartToggle = document.getElementById('autostart-toggle');
 const historyList = document.getElementById('history-list');
 const btnSettingsBack = document.getElementById('btn-settings-back');
@@ -381,28 +385,88 @@ btnSettingsBack.addEventListener('click', () => {
     switchView(mainView);
 });
 
-btnAddRepo.addEventListener('click', async () => {
-    const name = newRepoName.value.trim();
-    const url = newRepoUrl.value.trim();
-    
+btnAddLocal.addEventListener('click', async () => {
+    const name = newLocalName.value.trim();
     if (!name) {
-        alert("Please provide a folder name for the repository.");
+        newLocalName.style.borderColor = 'red';
+        setTimeout(() => newLocalName.style.borderColor = '', 2000);
         return;
     }
 
-    const originalText = btnAddRepo.innerText;
-    btnAddRepo.disabled = true;
-    btnAddRepo.innerText = url ? "Cloning Git Repository..." : "Creating Folder...";
+    btnAddLocal.disabled = true;
+    btnAddLocal.innerText = 'Creating folder...';
+    try {
+        await AddRepository(name, '');
+        await loadConfig();
+        newLocalName.value = '';
+    } catch (err) {
+        alert('Failed to create library:\n' + err);
+    } finally {
+        btnAddLocal.disabled = false;
+        btnAddLocal.innerText = '+ Create Local Library';
+    }
+});
+
+btnAddGit.addEventListener('click', async () => {
+    const url = newGitUrl.value.trim();
+    const name = newGitName.value.trim();
+
+    if (!url) {
+        newGitUrl.style.borderColor = 'red';
+        setTimeout(() => newGitUrl.style.borderColor = '', 2000);
+        return;
+    }
+    if (!name) {
+        newGitName.style.borderColor = 'red';
+        setTimeout(() => newGitName.style.borderColor = '', 2000);
+        return;
+    }
+
+    btnAddGit.disabled = true;
+    btnAddGit.innerText = 'Validating URL...';
+    syncStatusIcon.title = 'Validating repository URL...';
 
     try {
+        // AddRepository runs git ls-remote validation before cloning
+        btnAddGit.innerText = 'Cloning repository...';
         await AddRepository(name, url);
         await loadConfig();
-        newRepoName.value = "";
-        newRepoUrl.value = "";
+        newGitUrl.value = '';
+        newGitName.value = '';
     } catch (err) {
-        alert("Failed to add repository:\n" + err);
+        alert('Failed to connect library:\n' + err);
     } finally {
-        btnAddRepo.disabled = false;
-        btnAddRepo.innerText = originalText;
+        btnAddGit.disabled = false;
+        btnAddGit.innerText = 'Validate & Clone';
+    }
+});
+
+btnSyncNow.addEventListener('click', async () => {
+    btnSyncNow.disabled = true;
+    try {
+        await Call.ByName('App.SyncAllRepositories');
+    } catch (err) {
+        console.error('Sync failed:', err);
+    } finally {
+        btnSyncNow.disabled = false;
+    }
+});
+
+Events.On('sync-status', (e) => {
+    const state = Array.isArray(e.data) ? e.data[0] : e.data;
+    syncStatusIcon.style.opacity = '1';
+    switch (state) {
+        case 'syncing':
+            syncStatusIcon.innerText = '🔄';
+            syncStatusIcon.title = 'Syncing...';
+            break;
+        case 'synced':
+            syncStatusIcon.innerText = '✅';
+            syncStatusIcon.title = 'All libraries up to date.';
+            break;
+        case 'warning':
+            syncStatusIcon.innerText = '⚠️';
+            syncStatusIcon.title = 'Offline or un-synced local changes.';
+            break;
     }
 });

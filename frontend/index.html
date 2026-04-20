@@ -58,7 +58,11 @@
                     <h2 class="title" id="main-title">Monitoring Folder...</h2>
                     <p class="filename" id="filename-display">Waiting for file...</p>
                 </div>
-                <button id="btn-settings" class="btn-icon" title="Manage Libraries">⚙️</button>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span id="sync-status-icon" title="Sync status" style="font-size: 1.1rem; cursor: default; opacity: 0.5;">☁️</span>
+                    <button id="btn-sync-now" class="btn-icon" title="Sync all libraries now" style="font-size: 0.8rem; padding: 3px 7px;">↻</button>
+                    <button id="btn-settings" class="btn-icon" title="Manage Libraries">⚙️</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="repository-select">Target Library (Repo):</label>
@@ -93,10 +97,18 @@
             <ul id="repo-list" class="repo-list"></ul>
 
             <div class="add-repo-box">
-                <label style="font-size: 0.8rem;">Add New Git Library:</label>
-                <input type="text" id="new-repo-name" placeholder="Folder Name (e.g. OpenSource_Parts)">
-                <input type="text" id="new-repo-url" placeholder="Git URL (Optional)">
-                <button class="btn btn-primary" id="btn-add-repo" style="width: 100%; padding: 6px;">+ Add & Clone</button>
+                <label style="font-size: 0.8rem; color: var(--text-main);">Create Local Library</label>
+                <label style="font-size: 0.75rem;">For solo projects or testing — no Git required.</label>
+                <input type="text" id="new-local-name" placeholder="Folder Name (e.g. My_Parts)">
+                <button class="btn btn-secondary" id="btn-add-local" style="width: 100%; padding: 6px;">+ Create Local Library</button>
+            </div>
+
+            <div class="add-repo-box">
+                <label style="font-size: 0.8rem; color: var(--text-main);">Connect Shared Team Library (Git)</label>
+                <label style="font-size: 0.75rem;">HTTPS URL only. Git Credential Manager handles authentication.</label>
+                <input type="text" id="new-git-url" placeholder="https://github.com/your-team/parts-library.git">
+                <input type="text" id="new-git-name" placeholder="Local Folder Name (e.g. Team_Parts)">
+                <button class="btn btn-primary" id="btn-add-git" style="width: 100%; padding: 6px;">Validate & Clone</button>
             </div>
 
             <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
