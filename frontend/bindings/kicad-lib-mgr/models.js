@@ -64,6 +64,13 @@ export class Config {
              */
             this["defaultRepo"] = "";
         }
+        if (!("autoCategoryMap" in $$source)) {
+            /**
+             * @member
+             * @type {{ [_ in string]?: string[] }}
+             */
+            this["autoCategoryMap"] = {};
+        }
 
         Object.assign(this, $$source);
     }
@@ -77,6 +84,7 @@ export class Config {
         const $$createField2_0 = $$createType1;
         const $$createField3_0 = $$createType2;
         const $$createField4_0 = $$createType4;
+        const $$createField7_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("repositories" in $$parsedSource) {
             $$parsedSource["repositories"] = $$createField2_0($$parsedSource["repositories"]);
@@ -86,6 +94,9 @@ export class Config {
         }
         if ("history" in $$parsedSource) {
             $$parsedSource["history"] = $$createField4_0($$parsedSource["history"]);
+        }
+        if ("autoCategoryMap" in $$parsedSource) {
+            $$parsedSource["autoCategoryMap"] = $$createField7_0($$parsedSource["autoCategoryMap"]);
         }
         return new Config(/** @type {Partial<Config>} */($$parsedSource));
     }
@@ -219,3 +230,4 @@ const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = $Create.Array($Create.Any);
 const $$createType3 = HistoryItem.createFrom;
 const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Map($Create.Any, $$createType2);

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Repository represents a single Git library
@@ -26,13 +27,14 @@ type HistoryItem struct {
 
 // Config represents the user's saved settings
 type Config struct {
-	BaseLibPath  string        `json:"baseLibPath"`
-	WatchDir     string        `json:"watchDir"`
-	Repositories []Repository  `json:"repositories"`
-	Categories   []string      `json:"categories"`
-	History      []HistoryItem `json:"history"`
-	AutoStart    bool          `json:"autoStart"`
-	DefaultRepo  string        `json:"defaultRepo"`
+	BaseLibPath     string              `json:"baseLibPath"`
+	WatchDir        string              `json:"watchDir"`
+	Repositories    []Repository        `json:"repositories"`
+	Categories      []string            `json:"categories"`
+	History         []HistoryItem       `json:"history"`
+	AutoStart       bool                `json:"autoStart"`
+	DefaultRepo     string              `json:"defaultRepo"`
+	AutoCategoryMap map[string][]string `json:"autoCategoryMap"`
 }
 
 func getConfigPath() string {
@@ -52,14 +54,28 @@ func LoadConfig() Config {
 	homeDir, _ := os.UserHomeDir()
 	defaultWatchDir := filepath.Join(homeDir, "Downloads")
 
+	// Massive default dictionary for maximum accuracy out-of-the-box
+	defaultCategoryMap := map[string][]string{
+		"Passives":       {"resistor", "capacitor", "inductor", "ferrite", "potentiometer", "varistor", "thermistor"},
+		"Connectors":     {"connector", "header", "receptacle", "plug", "jack", "terminal", "usb", "hdmi", "rj45", "socket"},
+		"Semiconductors": {"diode", "transistor", "mosfet", "bjt", "igbt", "rectifier", "tvs", "zener", "triac"},
+		"Power":          {"ldo", "regulator", "buck", "boost", "converter", "smps", "pmic", "dcdc"},
+		"OpAmps":         {"opamp", "amplifier", "comparator"},
+		"MCU":            {"mcu", "microcontroller", "microprocessor", "dsp", "fpga", "cpld"},
+		"Sensors":        {"sensor", "accelerometer", "gyroscope", "magnetometer", "thermometer", "encoder"},
+		"Switches":       {"switch", "relay", "button", "toggle", "dip", "tactile"},
+		"Logic":          {"buffer", "transceiver", "inverter", "gate", "flip-flop", "latch", "multiplexer"},
+	}
+
 	// Default configuration
 	defaultConfig := Config{
-		BaseLibPath:  "",
-		WatchDir:     defaultWatchDir,
-		Repositories: []Repository{{Name: "CustomLibs", URL: ""}},
-		Categories:   []string{"MCU", "Regulators", "Connectors", "Passives", "OpAmps"},
-		History:      []HistoryItem{},
-		AutoStart:    false,
+		BaseLibPath:     "",
+		WatchDir:        defaultWatchDir,
+		Repositories:    []Repository{{Name: "CustomLibs", URL: ""}},
+		Categories:      []string{"MCU", "Power", "Connectors", "Passives", "OpAmps", "Semiconductors", "Sensors", "Switches", "Logic"},
+		History:         []HistoryItem{},
+		AutoStart:       false,
+		AutoCategoryMap: defaultCategoryMap,
 	}
 
 	if err != nil {
@@ -70,6 +86,10 @@ func LoadConfig() Config {
 	err = json.Unmarshal(data, &c)
 	if err != nil || len(c.Categories) == 0 {
 		return defaultConfig
+	}
+
+	if c.AutoCategoryMap == nil || len(c.AutoCategoryMap) == 0 {
+		c.AutoCategoryMap = defaultCategoryMap
 	}
 
 	// Ensure at least one repo exists for safety
@@ -92,4 +112,42 @@ func SaveConfig(c Config) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+func (c *Config) AddCustomCategory(category string) {
+	// 1. Ensure it's in the UI Categories list
+	existsInUI := false
+	for _, existing := range c.Categories {
+		if strings.EqualFold(existing, category) {
+			existsInUI = true
+			break
+		}
+	}
+	if !existsInUI {
+		c.Categories = append(c.Categories, category)
+	}
+
+	// 2. Ensure it's in the AutoCategoryMap (The Matcher)
+	if c.AutoCategoryMap == nil {
+		c.AutoCategoryMap = make(map[string][]string)
+	}
+
+	// If the map already has keywords for this category, we don't need to re-seed
+	if _, existsInMap := c.AutoCategoryMap[category]; existsInMap {
+		return
+	}
+
+	// 3. Seed the keywords since they are missing
+	keyword := strings.ToLower(category)
+	singular := keyword
+	if strings.HasSuffix(keyword, "s") && !strings.HasSuffix(keyword, "ss") {
+		singular = strings.TrimSuffix(keyword, "s")
+	}
+
+	keywords := []string{keyword}
+	if singular != keyword {
+		keywords = append(keywords, singular)
+	}
+
+	c.AutoCategoryMap[category] = keywords
 }

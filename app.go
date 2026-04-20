@@ -622,17 +622,9 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 		}
 	}
 
-	isNew := true
-	for _, c := range conf.Categories {
-		if strings.EqualFold(c, category) {
-			isNew = false
-			break
-		}
-	}
-	if isNew {
-		conf.Categories = append(conf.Categories, category)
-		SaveConfig(conf)
-	}
+	// Safely add category and auto-seed keywords to the dictionary
+	conf.AddCustomCategory(category)
+	SaveConfig(conf)
 
 	baseLibPath := conf.BaseLibPath
 	watchDir := conf.WatchDir
@@ -842,27 +834,49 @@ func (a *App) GuessCategory(filename string) string {
 		fullPath = filepath.Join(conf.WatchDir, filename)
 	}
 
-	keywords := map[string]string{
-		"regulator":       "Regulators",
-		"opamp":           "OpAmps",
-		"amplifier":       "OpAmps",
-		"mcu":             "MCU",
-		"microcontroller": "MCU",
-		"connector":       "Connectors",
-		"header":          "Connectors",
-		"resistor":        "Passives",
-		"capacitor":       "Passives",
-		"inductor":        "Passives",
+	// 1. Targeted regex: Extract ONLY the official description and keywords fields
+	descRegex := regexp.MustCompile(`(?i)\(property\s+"(?:ki_description|ki_keywords)"\s+"([^"]+)"`)
+
+	// Improved Punctuation filter: Added semicolon, colon, pipe, and underscore
+	f := func(c rune) bool {
+		return c == ' ' || c == ',' || c == '.' || c == '-' || c == '/' ||
+			c == '(' || c == ')' || c == ';' || c == ':' || c == '|' || c == '_'
 	}
 
-	scanContent := func(content string) string {
-		lowerContent := strings.ToLower(content)
-		for kw, cat := range keywords {
-			if strings.Contains(lowerContent, kw) {
-				return cat
+	// Internal helper to score content based on the longest keyword match
+	scanContent := func(content string) (string, int) {
+		matches := descRegex.FindAllStringSubmatch(content, -1)
+		if len(matches) == 0 {
+			return "", 0
+		}
+
+		var textToScan string
+		for _, match := range matches {
+			if len(match) > 1 {
+				textToScan += match[1] + " "
 			}
 		}
-		return ""
+
+		words := strings.FieldsFunc(strings.ToLower(textToScan), f)
+		normalizedText := " " + strings.Join(words, " ") + " "
+
+		var bestMatch string
+		var longestKw int
+
+		for cat, keywords := range conf.AutoCategoryMap {
+			for _, kw := range keywords {
+				kwWords := strings.FieldsFunc(strings.ToLower(kw), f)
+				paddedKw := " " + strings.Join(kwWords, " ") + " "
+
+				if strings.Contains(normalizedText, paddedKw) {
+					if len(paddedKw) > longestKw {
+						longestKw = len(paddedKw)
+						bestMatch = cat
+					}
+				}
+			}
+		}
+		return bestMatch, longestKw
 	}
 
 	fileInfo, err := os.Stat(fullPath)
@@ -870,36 +884,39 @@ func (a *App) GuessCategory(filename string) string {
 		return ""
 	}
 
+	var finalMatch string
+	var maxScore int
+
+	// Logic to capture the best match across multiple files (or single file)
+	processResult := func(match string, score int) {
+		if score > maxScore {
+			maxScore = score
+			finalMatch = match
+			// fmt.Printf("--> Scored: %s (%d) | Found in: %s\n", match, score, filepath.Base(fullPath))
+		}
+	}
+
 	if fileInfo.IsDir() {
-		var match string
 		filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
 			if err == nil && !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".kicad_sym") {
 				symBytes, _ := os.ReadFile(path)
-				match = scanContent(string(symBytes))
-				if match != "" {
-					return fmt.Errorf("found")
-				}
+				m, s := scanContent(string(symBytes))
+				processResult(m, s)
 			}
 			return nil
 		})
-		return match
-	}
-
-	if strings.HasSuffix(strings.ToLower(fullPath), ".zip") {
-		// Read entire zip into memory instantly to prevent file locking
+	} else if strings.HasSuffix(strings.ToLower(fullPath), ".zip") {
 		data, err := os.ReadFile(fullPath)
 		if err == nil {
-			bytesReader := bytes.NewReader(data)
-			r, err := zip.NewReader(bytesReader, int64(len(data)))
+			r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 			if err == nil {
 				for _, f := range r.File {
 					if strings.HasSuffix(strings.ToLower(f.Name), ".kicad_sym") {
-						rc, err := f.Open()
-						if err == nil {
-							symBytes, _ := io.ReadAll(rc)
-							rc.Close()
-							return scanContent(string(symBytes))
-						}
+						rc, _ := f.Open()
+						symBytes, _ := io.ReadAll(rc)
+						rc.Close()
+						m, s := scanContent(string(symBytes))
+						processResult(m, s)
 					}
 				}
 			}
@@ -907,9 +924,10 @@ func (a *App) GuessCategory(filename string) string {
 	} else if strings.HasSuffix(strings.ToLower(fullPath), ".kicad_sym") {
 		symBytes, err := os.ReadFile(fullPath)
 		if err == nil {
-			return scanContent(string(symBytes))
+			m, s := scanContent(string(symBytes))
+			processResult(m, s)
 		}
 	}
 
-	return ""
+	return finalMatch
 }
