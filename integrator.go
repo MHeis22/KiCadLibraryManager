@@ -14,6 +14,7 @@ import (
 var kicadVersionRegex = regexp.MustCompile(`^\d+(\.\d+)*$`)
 
 // IntegrateParts moves extracted assets and returns tracking info for Undo functionality
+// IntegrateParts moves extracted assets and returns tracking info for Undo functionality
 func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string, repoName string, conflictStrategy string, newName string) ([]string, string, string, error) {
 
 	prettyFolder := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
@@ -32,12 +33,30 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 	var masterSym string
 	var backupSym string
 
+	// --- NEW: Auto-determine component name from symbol ---
+	var autoName string
+	if assets.SymbolPath != "" {
+		srcBytes, _ := os.ReadFile(assets.SymbolPath)
+		reSymName := regexp.MustCompile(`(?s)\(\s*symbol\s+"([^"]+)"`)
+		match := reSymName.FindStringSubmatch(string(srcBytes))
+		if len(match) > 1 {
+			autoName = match[1]
+			// Sanitize invalid filename characters just in case
+			autoName = strings.ReplaceAll(autoName, "/", "_")
+			autoName = strings.ReplaceAll(autoName, "\\", "_")
+		}
+	}
+
+	// Manual rename from UI overrides the auto-detected name
+	if conflictStrategy == "rename" && newName != "" {
+		autoName = newName
+	}
+
 	// 1. Handle 3D Models
 	if assets.ModelPath != "" {
-		if conflictStrategy == "rename" && newName != "" {
-			finalModelName = newName + filepath.Ext(assets.ModelPath)
-		} else {
-			finalModelName = filepath.Base(assets.ModelPath)
+		finalModelName = filepath.Base(assets.ModelPath)
+		if autoName != "" {
+			finalModelName = autoName + filepath.Ext(assets.ModelPath)
 		}
 
 		destModelPath := filepath.Join(shapesFolder, finalModelName)
@@ -53,16 +72,17 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 	var finalFootprintName string
 	if assets.FootprintPath != "" {
 		baseName := filepath.Base(assets.FootprintPath)
-		if conflictStrategy == "rename" && newName != "" {
-			baseName = newName + ".kicad_mod"
+		if autoName != "" {
+			baseName = autoName + ".kicad_mod"
 		}
 
 		finalFootprintName = strings.TrimSuffix(baseName, ".kicad_mod")
 		destFootprintPath := filepath.Join(prettyFolder, baseName)
 
 		var fpErr error
-		if finalModelName != "" {
-			fpErr = patchFootprint3DPath(assets.FootprintPath, destFootprintPath, category, finalModelName, repoName)
+		if autoName != "" || finalModelName != "" {
+			// Now updates both the internal 3D path AND the internal component name
+			fpErr = patchFootprint(assets.FootprintPath, destFootprintPath, category, finalFootprintName, finalModelName, repoName)
 			fmt.Println("--> Copied & Patched Footprint to:", destFootprintPath)
 		} else {
 			fpErr = copyFile(assets.FootprintPath, destFootprintPath)
@@ -90,7 +110,6 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 		}
 
 		if err := injectSymbol(assets.SymbolPath, masterSym, category, finalFootprintName, repoName, conflictStrategy, newName); err != nil {
-			// Roll back the backup so we don't leave a stale .bak file
 			if masterExisted {
 				os.Rename(backupSym, masterSym)
 			} else {
@@ -102,9 +121,6 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 		UpdateKiCadSymTable(getLibNickname(repoName, category), masterSym)
 
 		if !masterExisted {
-			// Master was newly created — track it in addedFiles so UndoAction can
-			// delete it cleanly. Clear the backup/master return values so UndoAction
-			// doesn't attempt a backup-restore (there is no backup).
 			addedFiles = append(addedFiles, masterSym)
 			masterSym = ""
 			backupSym = ""
@@ -288,35 +304,37 @@ func UpdateKiCadEnvVar(basePath string) error {
 	return nil
 }
 
-func patchFootprint3DPath(src, dest, category, modelFileName, repoName string) error {
+func patchFootprint(src, dest, category, newFpName, modelFileName, repoName string) error {
 	contentBytes, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 	content := string(contentBytes)
 
-	// Target ONLY the first line of the model declaration to swap the path.
-	// Group 1 captures `(model ` and Group 2 is the file path.
-	re := regexp.MustCompile(`(?i)(\(model\s+)"?([^"\)]+\.(?:step|stp|wrl))"?`)
-
-	var patchedContent string
-	if re.MatchString(content) {
-		// Scenario 1: Model exists. Replace ONLY the path string.
-		// Use $$ to escape the literal $ in Go's regex ReplaceAllString
-		newPathStr := fmt.Sprintf(`${1}"$${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s"`, repoName, category, modelFileName)
-		patchedContent = re.ReplaceAllString(content, newPathStr)
-	} else {
-		// Scenario 2: No model tag exists at all, inject a fresh one at the end.
-		// Since we use string concatenation here (not regex expansion), a single $ is fine.
-		newModelPath := fmt.Sprintf("(model \"${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s\"\n    (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0))\n  )", repoName, category, modelFileName)
-		lastParenIdx := strings.LastIndex(content, ")")
-		if lastParenIdx == -1 {
-			return fmt.Errorf("malformed footprint file")
-		}
-		patchedContent = content[:lastParenIdx] + "  " + newModelPath + "\n)"
+	// 1. Patch the internal footprint name so KiCad doesn't complain about mismatches
+	if newFpName != "" {
+		// Targets the very first line: e.g. (footprint "OldMessyName" or (module "OldMessyName"
+		reFpName := regexp.MustCompile(`(?i)^(\s*\(\s*(?:footprint|module)\s+)"[^"]+"`)
+		content = reFpName.ReplaceAllString(content, `${1}"`+newFpName+`"`)
 	}
 
-	return os.WriteFile(dest, []byte(patchedContent), 0644)
+	// 2. Patch the 3D model path
+	if modelFileName != "" {
+		re := regexp.MustCompile(`(?i)(\(model\s+)"?([^"\)]+\.(?:step|stp|wrl))"?`)
+
+		if re.MatchString(content) {
+			newPathStr := fmt.Sprintf(`${1}"$${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s"`, repoName, category, modelFileName)
+			content = re.ReplaceAllString(content, newPathStr)
+		} else {
+			newModelPath := fmt.Sprintf("(model \"${KICAD_USER_3DMODEL_DIR}/%s/packages3d/%s.3dshapes/%s\"\n    (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0))\n  )", repoName, category, modelFileName)
+			lastParenIdx := strings.LastIndex(content, ")")
+			if lastParenIdx != -1 {
+				content = content[:lastParenIdx] + "  " + newModelPath + "\n)"
+			}
+		}
+	}
+
+	return os.WriteFile(dest, []byte(content), 0644)
 }
 
 func copyFile(src, dest string) error {

@@ -60,7 +60,7 @@ func LoadConfig() Config {
 		"Connectors":     {"connector", "header", "receptacle", "plug", "jack", "terminal", "usb", "hdmi", "rj45", "socket"},
 		"Semiconductors": {"diode", "transistor", "mosfet", "bjt", "igbt", "rectifier", "tvs", "zener", "triac"},
 		"Power":          {"ldo", "regulator", "buck", "boost", "converter", "smps", "pmic", "dcdc"},
-		"OpAmps":         {"opamp", "amplifier", "comparator"},
+		"OpAmps":         {"opamp", "amplifier", "comparator", "operational"},
 		"MCU":            {"mcu", "microcontroller", "microprocessor", "dsp", "fpga", "cpld"},
 		"Sensors":        {"sensor", "accelerometer", "gyroscope", "magnetometer", "thermometer", "encoder"},
 		"Switches":       {"switch", "relay", "button", "toggle", "dip", "tactile"},

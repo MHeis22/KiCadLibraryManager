@@ -576,31 +576,48 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 	targetRepoRoot := filepath.Join(baseLibPath, repoName)
 	var conflicts []string
 
+	// --- NEW: Try to auto-detect the component name to predict renamed files ---
+	var autoName string
+	if assets.SymbolPath != "" {
+		srcBytes, _ := os.ReadFile(assets.SymbolPath)
+		reSymName := regexp.MustCompile(`(?s)\(\s*symbol\s+"([^"]+)"`)
+		match := reSymName.FindStringSubmatch(string(srcBytes))
+		if len(match) > 1 {
+			autoName = match[1]
+			autoName = strings.ReplaceAll(autoName, "/", "_")
+			autoName = strings.ReplaceAll(autoName, "\\", "_")
+		}
+	}
+
 	if assets.FootprintPath != "" {
-		dest := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category), filepath.Base(assets.FootprintPath))
+		fpName := filepath.Base(assets.FootprintPath)
+		if autoName != "" {
+			fpName = autoName + ".kicad_mod"
+		}
+		dest := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category), fpName)
 		if _, err := os.Stat(dest); err == nil {
-			conflicts = append(conflicts, fmt.Sprintf("Footprint '%s' already exists.", filepath.Base(assets.FootprintPath)))
+			conflicts = append(conflicts, fmt.Sprintf("Footprint '%s' already exists.", fpName))
 		}
 	}
 
 	if assets.ModelPath != "" {
-		dest := filepath.Join(targetRepoRoot, "packages3d", fmt.Sprintf("%s.3dshapes", category), filepath.Base(assets.ModelPath))
+		modName := filepath.Base(assets.ModelPath)
+		if autoName != "" {
+			modName = autoName + filepath.Ext(assets.ModelPath)
+		}
+		dest := filepath.Join(targetRepoRoot, "packages3d", fmt.Sprintf("%s.3dshapes", category), modName)
 		if _, err := os.Stat(dest); err == nil {
-			conflicts = append(conflicts, fmt.Sprintf("3D Model '%s' already exists.", filepath.Base(assets.ModelPath)))
+			conflicts = append(conflicts, fmt.Sprintf("3D Model '%s' already exists.", modName))
 		}
 	}
 
 	if assets.SymbolPath != "" {
 		masterSym := filepath.Join(targetRepoRoot, "symbols", fmt.Sprintf("%s.kicad_sym", category))
 		if _, err := os.Stat(masterSym); err == nil {
-			srcBytes, _ := os.ReadFile(assets.SymbolPath)
-			reSymName := regexp.MustCompile(`(?s)\(\s*symbol\s+"([^"]+)"`)
-			match := reSymName.FindStringSubmatch(string(srcBytes))
-			if len(match) > 1 {
-				symName := match[1]
+			if autoName != "" {
 				masterBytes, _ := os.ReadFile(masterSym)
-				if strings.Contains(string(masterBytes), fmt.Sprintf(`(symbol "%s"`, symName)) {
-					conflicts = append(conflicts, fmt.Sprintf("Symbol '%s' already exists in category '%s'.", symName, category))
+				if strings.Contains(string(masterBytes), fmt.Sprintf(`(symbol "%s"`, autoName)) {
+					conflicts = append(conflicts, fmt.Sprintf("Symbol '%s' already exists in category '%s'.", autoName, category))
 				}
 			}
 		}
