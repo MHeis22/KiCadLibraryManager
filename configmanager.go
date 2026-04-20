@@ -32,6 +32,7 @@ type Config struct {
 	Categories   []string      `json:"categories"`
 	History      []HistoryItem `json:"history"`
 	AutoStart    bool          `json:"autoStart"`
+	DefaultRepo  string        `json:"defaultRepo"`
 }
 
 func getConfigPath() string {

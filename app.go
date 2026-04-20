@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -63,31 +64,29 @@ func (a *App) startSyncPoller() {
 	}()
 }
 
-// pollSyncStatus fetches from all git remotes and emits a sync-status event.
+// pollSyncStatus fetches from all git remotes and emits a per-repo sync-status JSON map.
 func (a *App) pollSyncStatus() {
 	conf := LoadConfig()
 	if conf.BaseLibPath == "" {
 		return
 	}
 
-	anyBehind := false
+	statusMap := map[string]string{}
 	for _, repo := range conf.Repositories {
 		if repo.URL == "" {
 			continue
 		}
 		repoPath := filepath.Join(conf.BaseLibPath, repo.Name)
-		behind, _ := GitFetchAndCheckStatus(repoPath)
-		if behind {
-			anyBehind = true
-			break
+		behind, err := GitFetchAndCheckStatus(repoPath)
+		if err != nil || behind {
+			statusMap[repo.Name] = "warning"
+		} else {
+			statusMap[repo.Name] = "synced"
 		}
 	}
 
-	if anyBehind {
-		a.app.Event.Emit("sync-status", "warning")
-	} else {
-		a.app.Event.Emit("sync-status", "synced")
-	}
+	data, _ := json.Marshal(statusMap)
+	a.app.Event.Emit("sync-status", string(data))
 }
 
 // SyncAllRepositories runs git pull --rebase on every git-backed repository.
@@ -100,6 +99,7 @@ func (a *App) SyncAllRepositories() error {
 	}
 
 	var errs []string
+	statusMap := map[string]string{}
 	for _, repo := range conf.Repositories {
 		if repo.URL == "" {
 			continue
@@ -107,15 +107,18 @@ func (a *App) SyncAllRepositories() error {
 		repoPath := filepath.Join(conf.BaseLibPath, repo.Name)
 		if err := GitPull(repoPath); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", repo.Name, err))
+			statusMap[repo.Name] = "warning"
+		} else {
+			statusMap[repo.Name] = "synced"
 		}
 	}
 
+	data, _ := json.Marshal(statusMap)
+	a.app.Event.Emit("sync-status", string(data))
+
 	if len(errs) > 0 {
-		a.app.Event.Emit("sync-status", "warning")
 		return fmt.Errorf("some repositories failed to sync: %s", strings.Join(errs, "; "))
 	}
-
-	a.app.Event.Emit("sync-status", "synced")
 	return nil
 }
 
@@ -321,6 +324,56 @@ func (a *App) AddRepository(name string, url string) error {
 	return nil
 }
 
+// RemoveRepository unlinks a repository from the app config without deleting files on disk.
+func (a *App) RemoveRepository(repoName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+
+	found := false
+	filtered := conf.Repositories[:0]
+	for _, r := range conf.Repositories {
+		if r.Name == repoName {
+			found = true
+		} else {
+			filtered = append(filtered, r)
+		}
+	}
+	if !found {
+		return fmt.Errorf("repository %q not found", repoName)
+	}
+	if len(filtered) == 0 {
+		return fmt.Errorf("cannot remove the last repository")
+	}
+	conf.Repositories = filtered
+	if conf.DefaultRepo == repoName {
+		conf.DefaultRepo = ""
+	}
+	SaveConfig(conf)
+	return nil
+}
+
+// SetDefaultRepository marks a repository as the default import target.
+func (a *App) SetDefaultRepository(repoName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+
+	found := false
+	for _, r := range conf.Repositories {
+		if r.Name == repoName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("repository %q not found", repoName)
+	}
+	conf.DefaultRepo = repoName
+	SaveConfig(conf)
+	return nil
+}
+
 // UndoAction reverts a previously imported component
 func (a *App) UndoAction(id string) bool {
 	a.mu.Lock()
@@ -430,10 +483,14 @@ func (a *App) ProcessFile(filename string, category string, repoName string) err
 	a.mu.Lock()
 	conf := LoadConfig()
 
-	if repoName == "" && len(conf.Repositories) > 0 {
-		repoName = conf.Repositories[0].Name
-	} else if repoName == "" {
-		repoName = "CustomLibs"
+	if repoName == "" {
+		if conf.DefaultRepo != "" {
+			repoName = conf.DefaultRepo
+		} else if len(conf.Repositories) > 0 {
+			repoName = conf.Repositories[0].Name
+		} else {
+			repoName = "CustomLibs"
+		}
 	}
 
 	isNew := true

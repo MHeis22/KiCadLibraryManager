@@ -7,6 +7,8 @@ import {
     SelectWatchDirectory,
     SaveSetup,
     AddRepository,
+    RemoveRepository,
+    SetDefaultRepository,
     SkipFile,
     HandleDroppedItem,
     HideWindow,
@@ -120,9 +122,10 @@ function populateCategories(categories) {
 }
 
 function populateRepositories(repositories) {
-    const previousRepo = repositorySelect.value;
     repositorySelect.innerHTML = "";
-    repoList.innerHTML = ""; 
+    repoList.innerHTML = "";
+
+    const defaultRepo = currentConfig && currentConfig.defaultRepo;
 
     repositories.forEach(repo => {
         let opt = document.createElement('option');
@@ -134,15 +137,57 @@ function populateRepositories(repositories) {
         li.style.display = "flex";
         li.style.justifyContent = "space-between";
         li.style.alignItems = "center";
-        
+        li.style.gap = "6px";
+
         let info = document.createElement('div');
-        info.innerHTML = `<strong>${repo.name}</strong> <span style="color: var(--text-muted); font-size: 0.8rem;">${repo.url ? '(' + repo.url + ')' : '(Local)'}</span>`;
-        
+        info.style.flex = "1";
+        const isDefault = repo.name === defaultRepo;
+        info.innerHTML = `<strong>${isDefault ? '★ ' : ''}${repo.name}</strong> <span style="color: var(--text-muted); font-size: 0.8rem;">${repo.url ? '(' + repo.url + ')' : '(Local)'}</span>`;
+
+        let syncIcon = document.createElement('span');
+        syncIcon.dataset.repoSyncIcon = repo.name;
+        syncIcon.style.fontSize = "0.9rem";
+        syncIcon.innerText = repo.url ? '☁️' : '';
+        syncIcon.title = '';
+
+        let starBtn = document.createElement('button');
+        starBtn.className = 'btn-icon';
+        starBtn.title = isDefault ? 'Default repo' : 'Set as default';
+        starBtn.innerText = '⭐';
+        starBtn.style.opacity = isDefault ? '1' : '0.4';
+        starBtn.addEventListener('click', async () => {
+            try {
+                await SetDefaultRepository(repo.name);
+                await loadConfig();
+            } catch (err) {
+                alert('Failed to set default: ' + err);
+            }
+        });
+
+        let removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-icon';
+        removeBtn.title = 'Remove from app (files on disk are kept)';
+        removeBtn.innerText = '🗑️';
+        removeBtn.addEventListener('click', async () => {
+            if (!confirm(`Remove "${repo.name}" from the app?\nFiles on disk will NOT be deleted.`)) return;
+            try {
+                await RemoveRepository(repo.name);
+                await loadConfig();
+            } catch (err) {
+                alert('Cannot remove: ' + err);
+            }
+        });
+
         li.appendChild(info);
+        li.appendChild(syncIcon);
+        li.appendChild(starBtn);
+        li.appendChild(removeBtn);
         repoList.appendChild(li);
     });
 
-    if (previousRepo) repositorySelect.value = previousRepo;
+    if (defaultRepo) {
+        repositorySelect.value = defaultRepo;
+    }
 }
 
 function populateHistory(historyItems) {
@@ -505,20 +550,36 @@ btnSyncNow.addEventListener('click', async () => {
 });
 
 Events.On('sync-status', (e) => {
-    const state = Array.isArray(e.data) ? e.data[0] : e.data;
+    const raw = Array.isArray(e.data) ? e.data[0] : e.data;
     syncStatusIcon.style.opacity = '1';
-    switch (state) {
-        case 'syncing':
-            syncStatusIcon.innerText = '🔄';
-            syncStatusIcon.title = 'Syncing...';
-            break;
-        case 'synced':
+
+    if (raw === 'syncing') {
+        syncStatusIcon.innerText = '🔄';
+        syncStatusIcon.title = 'Syncing...';
+        return;
+    }
+
+    try {
+        const map = JSON.parse(raw);
+        let hasWarning = false;
+        for (const [name, state] of Object.entries(map)) {
+            const el = document.querySelector(`[data-repo-sync-icon="${name}"]`);
+            if (el) {
+                el.innerText = state === 'warning' ? '⚠️' : '✅';
+                el.title = state === 'warning' ? 'Behind remote or offline' : 'Up to date';
+            }
+            if (state === 'warning') hasWarning = true;
+        }
+        syncStatusIcon.innerText = hasWarning ? '⚠️' : '✅';
+        syncStatusIcon.title = hasWarning ? 'One or more repos are offline or behind.' : 'All libraries up to date.';
+    } catch {
+        // Legacy plain-string fallback
+        if (raw === 'synced') {
             syncStatusIcon.innerText = '✅';
             syncStatusIcon.title = 'All libraries up to date.';
-            break;
-        case 'warning':
+        } else {
             syncStatusIcon.innerText = '⚠️';
             syncStatusIcon.title = 'Offline or un-synced local changes.';
-            break;
+        }
     }
 });

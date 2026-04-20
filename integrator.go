@@ -62,7 +62,7 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			fmt.Println("Warning: failed to write footprint:", fpErr)
 		} else {
 			addedFiles = append(addedFiles, destFootprintPath)
-			UpdateKiCadFpTable(category, prettyFolder)
+			UpdateKiCadFpTable(getLibNickname(repoName, category), prettyFolder)
 		}
 	}
 
@@ -79,7 +79,7 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			}
 		}
 
-		if err := injectSymbol(assets.SymbolPath, masterSym, category, finalFootprintName); err != nil {
+		if err := injectSymbol(assets.SymbolPath, masterSym, category, finalFootprintName, repoName); err != nil {
 			// Roll back the backup so we don't leave a stale .bak file
 			if masterExisted {
 				os.Rename(backupSym, masterSym)
@@ -89,7 +89,7 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			return addedFiles, "", "", fmt.Errorf("failed to inject symbol: %w", err)
 		}
 		fmt.Println("--> Injected & Sanitized Symbol into:", masterSym)
-		UpdateKiCadSymTable(category, masterSym)
+		UpdateKiCadSymTable(getLibNickname(repoName, category), masterSym)
 
 		if !masterExisted {
 			// Master was newly created — track it in addedFiles so UndoAction can
@@ -135,31 +135,33 @@ func InitializeKiCadLibraries(conf Config) {
 
 	UpdateKiCadEnvVar(conf.BaseLibPath)
 
-	defaultRepo := conf.Repositories[0].Name
-	targetRepoRoot := filepath.Join(conf.BaseLibPath, defaultRepo)
+	for _, repo := range conf.Repositories {
+		targetRepoRoot := filepath.Join(conf.BaseLibPath, repo.Name)
+		for _, category := range conf.Categories {
+			nickname := getLibNickname(repo.Name, category)
 
-	for _, category := range conf.Categories {
-		// Setup Footprint Library Folder
-		prettyPath := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
-		os.MkdirAll(prettyPath, os.ModePerm)
-		UpdateKiCadFpTable(category, prettyPath)
+			// Setup Footprint Library Folder
+			prettyPath := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
+			os.MkdirAll(prettyPath, os.ModePerm)
+			UpdateKiCadFpTable(nickname, prettyPath)
 
-		// Setup Symbol Library File
-		symDir := filepath.Join(targetRepoRoot, "symbols")
-		symPath := filepath.Join(symDir, fmt.Sprintf("%s.kicad_sym", category))
+			// Setup Symbol Library File
+			symDir := filepath.Join(targetRepoRoot, "symbols")
+			symPath := filepath.Join(symDir, fmt.Sprintf("%s.kicad_sym", category))
 
-		if _, err := os.Stat(symPath); os.IsNotExist(err) {
-			os.MkdirAll(symDir, os.ModePerm)
-			emptyLib := "(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)\n)\n"
-			if writeErr := os.WriteFile(symPath, []byte(emptyLib), 0644); writeErr != nil {
-				fmt.Printf("Warning: failed to create symbol library %s: %v\n", symPath, writeErr)
+			if _, err := os.Stat(symPath); os.IsNotExist(err) {
+				os.MkdirAll(symDir, os.ModePerm)
+				emptyLib := "(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)\n)\n"
+				if writeErr := os.WriteFile(symPath, []byte(emptyLib), 0644); writeErr != nil {
+					fmt.Printf("Warning: failed to create symbol library %s: %v\n", symPath, writeErr)
+				}
 			}
+			UpdateKiCadSymTable(nickname, symPath)
 		}
-		UpdateKiCadSymTable(category, symPath)
 	}
 }
 
-func injectSymbol(sourceFile, masterFile, category, footprintName string) error {
+func injectSymbol(sourceFile, masterFile, category, footprintName, repoName string) error {
 	srcBytes, err := os.ReadFile(sourceFile)
 	if err != nil {
 		return err
@@ -180,7 +182,8 @@ func injectSymbol(sourceFile, masterFile, category, footprintName string) error 
 
 	if footprintName != "" {
 		reFootprintProp := regexp.MustCompile(`\(property\s+"Footprint"\s+"[^"]*"`)
-		newProp := fmt.Sprintf(`(property "Footprint" "%s:%s"`, category, footprintName)
+		// Dynamically fetch the correct nickname for the footprint property mapping
+		newProp := fmt.Sprintf(`(property "Footprint" "%s:%s"`, getLibNickname(repoName, category), footprintName)
 		extractedSymbol = reFootprintProp.ReplaceAllString(extractedSymbol, newProp)
 	}
 
@@ -390,4 +393,18 @@ func UpdateKiCadFpTable(libNickname, libPath string) error {
 		fmt.Printf("--> Registered footprint library %s in KiCad %s\n", libNickname, entry.Name())
 	}
 	return nil
+}
+
+// getLibNickname intelligently determines the KiCad library table nickname based on if the repo is the primary one.
+func getLibNickname(repoName, category string) string {
+	conf := LoadConfig()
+
+	// If this repo is the designated default, or if it's the very first/only repo
+	isPrimary := repoName == conf.DefaultRepo ||
+		(conf.DefaultRepo == "" && len(conf.Repositories) > 0 && repoName == conf.Repositories[0].Name)
+
+	if isPrimary {
+		return category // Clean name: e.g., "Connectors"
+	}
+	return fmt.Sprintf("%s_%s", repoName, category) // Safe name: e.g., "Github_Connectors"
 }

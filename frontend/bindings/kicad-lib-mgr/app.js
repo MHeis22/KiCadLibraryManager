@@ -70,6 +70,15 @@ export function ProcessFile(filename, category, repoName) {
 }
 
 /**
+ * RemoveRepository unlinks a repository from the app config without deleting files on disk.
+ * @param {string} repoName
+ * @returns {$CancellablePromise<void>}
+ */
+export function RemoveRepository(repoName) {
+    return $Call.ByID(3806196213, repoName);
+}
+
+/**
  * @param {string} path
  * @returns {$CancellablePromise<void>}
  */
@@ -89,6 +98,15 @@ export function SelectDirectory() {
  */
 export function SelectWatchDirectory() {
     return $Call.ByID(2801046955);
+}
+
+/**
+ * SetDefaultRepository marks a repository as the default import target.
+ * @param {string} repoName
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetDefaultRepository(repoName) {
+    return $Call.ByID(1926989872, repoName);
 }
 
 /**

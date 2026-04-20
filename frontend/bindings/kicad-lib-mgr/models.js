@@ -57,6 +57,13 @@ export class Config {
              */
             this["autoStart"] = false;
         }
+        if (!("defaultRepo" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["defaultRepo"] = "";
+        }
 
         Object.assign(this, $$source);
     }
