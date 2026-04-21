@@ -18,6 +18,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+const AppVersion = "1.13"
+
 type App struct {
 	app           *application.App // Updated to *application.App for Wails v3
 	mainWindow    *application.WebviewWindow
@@ -252,7 +254,9 @@ func (a *App) watchFolder(ctx context.Context) {
 // ---- THESE FUNCTIONS ARE EXPOSED TO JAVASCRIPT ----
 
 func (a *App) GetConfig() Config {
-	return LoadConfig()
+	c := LoadConfig()
+	c.Version = AppVersion
+	return c
 }
 
 func (a *App) SelectDirectory() string {
@@ -669,6 +673,21 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 					conflicts = append(conflicts, fmt.Sprintf("Symbol '%s' already exists in category '%s'.", autoName, category))
 				}
 			}
+		}
+	}
+
+	if assets.SchBlockPath != "" || assets.PcbBlockPath != "" {
+		blockSrc := assets.SchBlockPath
+		if blockSrc == "" {
+			blockSrc = assets.PcbBlockPath
+		}
+		blockName := autoName
+		if blockName == "" {
+			blockName = strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
+		}
+		blockDir := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category), fmt.Sprintf("%s.kicad_block", blockName))
+		if _, err := os.Stat(blockDir); err == nil {
+			conflicts = append(conflicts, fmt.Sprintf("Design block '%s' already exists in category '%s'.", blockName, category))
 		}
 	}
 

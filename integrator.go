@@ -20,9 +20,9 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 	prettyFolder := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
 	shapesFolder := filepath.Join(targetRepoRoot, "packages3d", fmt.Sprintf("%s.3dshapes", category))
 	symbolsFolder := filepath.Join(targetRepoRoot, "symbols")
-	blocksFolder := filepath.Join(targetRepoRoot, "blocks", category)
+	blocksLibFolder := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category))
 
-	for _, dir := range []string{prettyFolder, shapesFolder, symbolsFolder, blocksFolder} {
+	for _, dir := range []string{prettyFolder, shapesFolder, symbolsFolder} {
 		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 			return nil, "", "", fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
@@ -127,23 +127,44 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 		}
 	}
 
-	// 4. Handle Design Blocks
+	// 4. Handle Design Blocks — each block gets its own .kicad_block subfolder
+	blockName := autoName
+	if blockName == "" {
+		src := assets.SchBlockPath
+		if src == "" {
+			src = assets.PcbBlockPath
+		}
+		blockName = strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
+	}
+
 	if assets.SchBlockPath != "" {
-		destSch := filepath.Join(blocksFolder, filepath.Base(assets.SchBlockPath))
-		if err := copyFile(assets.SchBlockPath, destSch); err != nil {
-			fmt.Println("Warning: failed to copy schematic block:", err)
+		blockDir := filepath.Join(blocksLibFolder, fmt.Sprintf("%s.kicad_block", blockName))
+		if err := os.MkdirAll(blockDir, os.ModePerm); err != nil {
+			fmt.Println("Warning: failed to create schematic block dir:", err)
 		} else {
-			addedFiles = append(addedFiles, destSch)
-			fmt.Println("--> Copied Schematic Design Block to:", destSch)
+			destSch := filepath.Join(blockDir, "design_block.kicad_sch")
+			if err := copyFile(assets.SchBlockPath, destSch); err != nil {
+				fmt.Println("Warning: failed to copy schematic block:", err)
+			} else {
+				addedFiles = append(addedFiles, blockDir)
+				fmt.Println("--> Copied Schematic Design Block to:", destSch)
+				UpdateKiCadBlockTable(getLibNickname(repoName, category), blocksLibFolder)
+			}
 		}
 	}
 	if assets.PcbBlockPath != "" {
-		destPcb := filepath.Join(blocksFolder, filepath.Base(assets.PcbBlockPath))
-		if err := copyFile(assets.PcbBlockPath, destPcb); err != nil {
-			fmt.Println("Warning: failed to copy PCB block:", err)
+		blockDir := filepath.Join(blocksLibFolder, fmt.Sprintf("%s.kicad_block", blockName))
+		if err := os.MkdirAll(blockDir, os.ModePerm); err != nil {
+			fmt.Println("Warning: failed to create PCB block dir:", err)
 		} else {
-			addedFiles = append(addedFiles, destPcb)
-			fmt.Println("--> Copied PCB Design Block to:", destPcb)
+			destPcb := filepath.Join(blockDir, "design_block.kicad_pcb")
+			if err := copyFile(assets.PcbBlockPath, destPcb); err != nil {
+				fmt.Println("Warning: failed to copy PCB block:", err)
+			} else {
+				addedFiles = append(addedFiles, blockDir)
+				fmt.Println("--> Copied PCB Design Block to:", destPcb)
+				UpdateKiCadBlockTable(getLibNickname(repoName, category), blocksLibFolder)
+			}
 		}
 	}
 
@@ -432,6 +453,47 @@ func UpdateKiCadFpTable(libNickname, libPath string) error {
 			continue
 		}
 		fmt.Printf("--> Registered footprint library %s in KiCad %s\n", libNickname, entry.Name())
+	}
+	return nil
+}
+
+func UpdateKiCadBlockTable(libNickname, libPath string) error {
+	kicadBase := filepath.Join(kicadConfigDir(), "kicad")
+
+	entries, err := os.ReadDir(kicadBase)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !kicadVersionRegex.MatchString(entry.Name()) {
+			continue
+		}
+
+		tablePath := filepath.Join(kicadBase, entry.Name(), "design_block_lib_table")
+
+		content, err := os.ReadFile(tablePath)
+		if err != nil {
+			content = []byte("(design_block_lib_table\n)")
+		}
+
+		sContent := string(content)
+		if strings.Contains(sContent, fmt.Sprintf("(name %q)", libNickname)) {
+			continue
+		}
+
+		entryStr := fmt.Sprintf("  (lib (name %q)(type \"KiCad\")(uri %q)(options \"\")(descr \"Added by KiCadLibMgr\"))\n", libNickname, libPath)
+		lastIdx := strings.LastIndex(sContent, ")")
+		if lastIdx == -1 {
+			continue
+		}
+
+		newContent := sContent[:lastIdx] + entryStr + ")\n"
+		if err := os.WriteFile(tablePath, []byte(newContent), 0644); err != nil {
+			fmt.Printf("Warning: failed to write design_block_lib_table for KiCad %s: %v\n", entry.Name(), err)
+			continue
+		}
+		fmt.Printf("--> Registered design block library %s in KiCad %s\n", libNickname, entry.Name())
 	}
 	return nil
 }

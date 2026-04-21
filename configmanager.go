@@ -36,6 +36,7 @@ type Config struct {
 	AutoStart       bool                `json:"autoStart"`
 	DefaultRepo     string              `json:"defaultRepo"`
 	AutoCategoryMap map[string][]string `json:"autoCategoryMap"`
+	Version         string              `json:"version,omitempty"`
 }
 
 func getConfigPath() string {

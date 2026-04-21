@@ -71,6 +71,13 @@ export class Config {
              */
             this["autoCategoryMap"] = {};
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["version"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }

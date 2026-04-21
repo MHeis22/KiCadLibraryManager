@@ -45,6 +45,7 @@ const syncStatusIcon = document.getElementById('sync-status-icon');
 const btnSyncNow = document.getElementById('btn-sync-now');
 const autostartToggle = document.getElementById('autostart-toggle');
 const historyList = document.getElementById('history-list');
+const appVersionEl = document.getElementById('app-version');
 const btnSettingsBack = document.getElementById('btn-settings-back');
 
 // Conflict UI Elements
@@ -123,6 +124,7 @@ async function loadConfig() {
             populateRepositories(currentConfig.repositories || []);
             populateCategorySettings(currentConfig.categories || []);
             populateHistory(currentConfig.history || []);
+            if (appVersionEl && currentConfig.version) appVersionEl.textContent = `v${currentConfig.version}`;
         }
     } catch (err) {
         console.error("Failed to load config:", err);
@@ -314,6 +316,12 @@ function populateCategorySettings(categories) {
     });
 }
 
+function formatHistoryDate(timestamp) {
+    const d = new Date(timestamp * 1000);
+    return d.toLocaleDateString([], {month: 'short', day: 'numeric'}) + ', ' +
+           d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
 function populateHistory(historyItems) {
     historyList.innerHTML = "";
     if (!historyItems || historyItems.length === 0) {
@@ -326,13 +334,19 @@ function populateHistory(historyItems) {
     reversed.forEach((item, index) => {
         let li = document.createElement('li');
         li.className = 'history-item';
-        
+
         let txt = document.createElement('span');
         txt.className = 'history-text';
         txt.innerText = `${item.filename} → ${item.category}`;
         txt.title = `Imported to ${item.repoName} on ${new Date(item.timestamp * 1000).toLocaleString()}`;
-        
+
         li.appendChild(txt);
+
+        let dateSpan = document.createElement('span');
+        dateSpan.style.color = "var(--text-muted)";
+        dateSpan.style.fontSize = "0.75rem";
+        dateSpan.style.whiteSpace = "nowrap";
+        dateSpan.innerText = formatHistoryDate(item.timestamp);
 
         // Only allow rollback on the very latest import to ensure sym-lib .bak integrity
         if (index === 0) {
@@ -349,14 +363,15 @@ function populateHistory(historyItems) {
                     }
                 }
             };
-            li.appendChild(btn);
+            let rightGroup = document.createElement('span');
+            rightGroup.style.display = "flex";
+            rightGroup.style.alignItems = "center";
+            rightGroup.style.gap = "8px";
+            rightGroup.appendChild(dateSpan);
+            rightGroup.appendChild(btn);
+            li.appendChild(rightGroup);
         } else {
-            // Just show the time for older items in the history log
-            let timeSpan = document.createElement('span');
-            timeSpan.style.color = "var(--text-muted)";
-            timeSpan.style.fontSize = "0.75rem";
-            timeSpan.innerText = new Date(item.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            li.appendChild(timeSpan);
+            li.appendChild(dateSpan);
         }
 
         historyList.appendChild(li);
