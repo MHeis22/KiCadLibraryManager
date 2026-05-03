@@ -182,6 +182,7 @@ func (a *App) watchFolder(ctx context.Context) {
 	if err != nil {
 		fmt.Println("Error adding path to watcher:", err)
 		a.app.Event.Emit("watcher-error", fmt.Sprintf("Cannot watch folder: %s", err.Error()))
+		a.app.Event.Emit("watcher-stopped", "")
 		return
 	}
 	fmt.Println("--> Wails Backend Successfully watching:", watchPath)
@@ -276,6 +277,10 @@ func (a *App) SelectDirectory() string {
 func (a *App) SelectWatchDirectory() string {
 	dir := a.SelectDirectory()
 	if dir != "" {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			a.app.Event.Emit("watcher-error", fmt.Sprintf("Selected directory does not exist: %s", dir))
+			return ""
+		}
 		a.mu.Lock()
 		conf := LoadConfig()
 		conf.WatchDir = dir
@@ -562,6 +567,7 @@ func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 				assets.PcbBlockPath = fullPath
 			}
 		} else {
+			var walkErr error
 			filepath.Walk(fullPath, func(p string, info os.FileInfo, err error) error {
 				if err != nil || info.IsDir() {
 					return nil
@@ -569,18 +575,37 @@ func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 				ext := strings.ToLower(filepath.Ext(info.Name()))
 				switch ext {
 				case ".kicad_sym":
+					if assets.SymbolPath != "" {
+						walkErr = fmt.Errorf("multiple .kicad_sym files found; provide a single-component folder")
+						return walkErr
+					}
 					assets.SymbolPath = p
 				case ".kicad_mod":
+					if assets.FootprintPath != "" {
+						walkErr = fmt.Errorf("multiple .kicad_mod files found; provide a single-component folder")
+						return walkErr
+					}
 					assets.FootprintPath = p
 				case ".step", ".stp", ".wrl":
 					assets.ModelPath = p
 				case ".kicad_sch":
+					if assets.SchBlockPath != "" {
+						walkErr = fmt.Errorf("multiple .kicad_sch files found; provide a single-component folder")
+						return walkErr
+					}
 					assets.SchBlockPath = p
 				case ".kicad_pcb":
+					if assets.PcbBlockPath != "" {
+						walkErr = fmt.Errorf("multiple .kicad_pcb files found; provide a single-component folder")
+						return walkErr
+					}
 					assets.PcbBlockPath = p
 				}
 				return nil
 			})
+			if walkErr != nil {
+				return nil, "", walkErr
+			}
 		}
 	} else {
 		assets, tempDir, err = ExtractAndFind(fullPath)
@@ -602,7 +627,8 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 		} else if len(conf.Repositories) > 0 {
 			repoName = conf.Repositories[0].Name
 		} else {
-			repoName = "CustomLibs"
+			a.mu.Unlock()
+			return nil, fmt.Errorf("no repositories configured; add a repository before importing")
 		}
 	}
 	baseLibPath := conf.BaseLibPath
@@ -707,7 +733,8 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 		} else if len(conf.Repositories) > 0 {
 			repoName = conf.Repositories[0].Name
 		} else {
-			repoName = "CustomLibs"
+			a.mu.Unlock()
+			return fmt.Errorf("no repositories configured; add a repository before importing")
 		}
 	}
 

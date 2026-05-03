@@ -226,8 +226,11 @@ function populateRepositories(repositories) {
         repoList.appendChild(li);
     });
 
-    if (defaultRepo) {
+    const optionExists = Array.from(repositorySelect.options).some(o => o.value === defaultRepo);
+    if (defaultRepo && optionExists) {
         repositorySelect.value = defaultRepo;
+    } else if (repositorySelect.options.length > 0) {
+        repositorySelect.value = repositorySelect.options[0].value;
     }
 }
 
@@ -626,6 +629,8 @@ async function processItemWithStrategy(strategy, newName) {
         await processNextInQueue(); 
     } catch (err) {
         showToast("Processing error: " + err);
+        fileQueue.shift();
+        await processNextInQueue();
     } finally {
         btnConflictProceed.disabled = false;
         btnOk.disabled = false;
@@ -696,9 +701,11 @@ btnConflictProceed.addEventListener('click', async () => {
 });
 
 btnConflictCancel.addEventListener('click', async () => {
-    fileQueue.shift(); 
-    await SkipFile(fileQueue[0]); 
-    await processNextInQueue(); 
+    if (fileQueue.length > 0) {
+        await SkipFile(fileQueue[0]);
+        fileQueue.shift();
+        await processNextInQueue();
+    }
 });
 
 

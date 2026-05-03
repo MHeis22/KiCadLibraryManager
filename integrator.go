@@ -136,6 +136,9 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 		}
 		blockName = strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
 	}
+	if (assets.SchBlockPath != "" || assets.PcbBlockPath != "") && blockName == "" {
+		return nil, "", "", fmt.Errorf("cannot determine block name: no valid source file found")
+	}
 
 	if assets.SchBlockPath != "" {
 		blockDir := filepath.Join(blocksLibFolder, fmt.Sprintf("%s.kicad_block", blockName))
