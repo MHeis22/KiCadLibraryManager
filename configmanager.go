@@ -90,7 +90,7 @@ func LoadConfig() Config {
 		return defaultConfig
 	}
 
-	if c.AutoCategoryMap == nil || len(c.AutoCategoryMap) == 0 {
+	if len(c.AutoCategoryMap) == 0 {
 		c.AutoCategoryMap = defaultCategoryMap
 	}
 

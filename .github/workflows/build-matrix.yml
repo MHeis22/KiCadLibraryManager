@@ -1,0 +1,47 @@
+name: Build Cross-Platform App
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        # Define the OS, Wails platform name, and output artifact name
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            artifact: linux-binary
+          - os: macos-latest
+            platform: darwin
+            artifact: mac-binary
+          - os: windows-latest
+            platform: windows
+            artifact: windows-binary
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # Linux only: Install GTK/Webkit dependencies
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails v3
+        run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+      - name: Build Application
+        # Uses the matrix platform variable automatically
+        run: wails3 task build PLATFORM=${{ matrix.platform }} CONFIG=production
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: bin/

@@ -18,7 +18,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const AppVersion = "1.13"
+const AppVersion = "1.14"
 
 type App struct {
 	app           *application.App // Updated to *application.App for Wails v3
