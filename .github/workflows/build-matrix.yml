@@ -45,6 +45,12 @@ jobs:
         # (e.g. "could not import C (no metadata for C)" on cgo platforms).
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.103
 
+      # Windows only: Install NSIS (makensis) for packaging installers
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        uses: negrutiu/nsis-install@v1
+
+
       - name: Build / Package Application
         env:
           # Let the appimagetool AppImage self-extract instead of needing FUSE,
