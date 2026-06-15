@@ -8,12 +8,10 @@ jobs:
       fail-fast: false # Prevents one OS failure from instantly canceling the others
       matrix:
         include:
-          # Linux: build the binary only. Full multi-format packaging
-          # (AppImage/deb/rpm/aur) is fragile on generic CI runners.
           - os: ubuntu-latest
             platform: linux
-            artifact: linux-binary
-            task: build
+            artifact: linux-package
+            task: package
           - os: macos-latest
             platform: darwin
             artifact: mac-package
@@ -36,10 +34,11 @@ jobs:
           go-version-file: 'go.mod' # Match the toolchain go.mod requires (1.25), not a stale pin
           cache: false # Bypasses the tar exit code 2 cache corruption issue
 
-      # Linux only: Install GTK/Webkit dependencies
+      # Linux only: Wails v3 defaults to the GTK4 / WebKitGTK 6.0 backend,
+      # so install the GTK4 dev stack (not gtk3/webkit2gtk-4.1).
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc libgtk-3-dev libwebkit2gtk-4.1-dev
+        run: sudo apt-get update && sudo apt-get install -y gcc libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev
 
       - name: Install Wails v3
         # Must match the wails/v3 version in go.mod, or `generate bindings` fails
@@ -47,6 +46,10 @@ jobs:
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.103
 
       - name: Build / Package Application
+        env:
+          # Let the appimagetool AppImage self-extract instead of needing FUSE,
+          # which isn't available on the GitHub runners.
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: wails3 task ${{ matrix.task }} PLATFORM=${{ matrix.platform }} CONFIG=production
 
       - name: Upload Package
