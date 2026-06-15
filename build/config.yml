@@ -9,9 +9,9 @@ info:
   productName: "KiCad Library Manager"
   productIdentifier: "com.kicadlibmgr.app"
   description: "Automatic KiCad Component Library Manager"
-  copyright: "(c) 2025, KiCad Library Manager"
+  copyright: "(c) 2026, KiCad Library Manager"
   comments: "Automatically imports and organises KiCad component libraries"
-  version: "1.15"
+  version: "1.16"
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension
   #                               # If not set and Assets.car exists, defaults to "appicon"

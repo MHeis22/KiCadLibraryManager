@@ -23,8 +23,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # Full history (prevents git exit-128 from shallow clones)
-          fetch-tags: true  # Tags too, so any `git describe` during the build resolves
+          fetch-depth: 0    # Full history (fetches all tags and prevents git exit-128)
 
       - name: Setup Go
         uses: actions/setup-go@v5
