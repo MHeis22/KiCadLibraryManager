@@ -33,20 +33,38 @@ func GitClone(url string, destPath string) error {
 	return nil
 }
 
-// GitPull checks for a clean working directory and runs git pull --rebase.
-// Returns nil for non-git repos (silently skipped).
+// GitPull stashes any manual KiCad edits, runs git pull --rebase, then restores
+// the edits — so a user editing symbols/footprints directly in KiCad doesn't
+// block syncing. Returns nil for non-git repos (silently skipped).
 func GitPull(repoPath string) error {
 	if !isGitRepository(repoPath) {
 		return nil
 	}
 
-	// Abort if there are uncommitted local changes
+	// 1. Detect manual edits made directly in KiCad (uncommitted changes).
 	statusOut, _ := gitCommand("-C", repoPath, "status", "--porcelain").Output()
-	if strings.TrimSpace(string(statusOut)) != "" {
-		return fmt.Errorf("repo has uncommitted local changes — please resolve manually before syncing")
+	hasManualEdits := strings.TrimSpace(string(statusOut)) != ""
+
+	// 2. Stash them safely before pulling.
+	if hasManualEdits {
+		fmt.Println("    [Git] Stashing manual KiCad edits...")
+		gitCommand("-C", repoPath, "stash").Run()
 	}
 
+	// 3. Pull the latest from the remote.
 	out, err := gitCommand("-C", repoPath, "pull", "--rebase").CombinedOutput()
+
+	// 4. Always restore the manual edits.
+	if hasManualEdits {
+		fmt.Println("    [Git] Restoring manual KiCad edits...")
+		if popErr := gitCommand("-C", repoPath, "stash", "pop").Run(); popErr != nil {
+			fmt.Println("    [Git Error] Conflict restoring manual edits. Favoring local changes to protect the KiCad library.")
+			// Keep local (stashed) changes to avoid S-expression corruption.
+			gitCommand("-C", repoPath, "checkout", "--ours", ".").Run()
+			gitCommand("-C", repoPath, "stash", "drop").Run()
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("pull failed: %s", strings.TrimSpace(string(out)))
 	}

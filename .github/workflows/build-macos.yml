@@ -1,0 +1,28 @@
+name: Build Mac App
+on: 
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21' 
+
+      - name: Install Wails v3
+        run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+      - name: Build Application
+        # Assuming your Taskfile uses 'darwin' for macOS builds
+        run: wails3 task build PLATFORM=darwin CONFIG=production
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-binary
+          path: bin/ # This will likely contain a .app bundle

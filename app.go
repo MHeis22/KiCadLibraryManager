@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1104,4 +1105,80 @@ func (a *App) GuessCategory(filename string) string {
 	}
 
 	return finalMatch
+}
+
+// UpdateInfo is returned to the frontend to drive the "update available" modal.
+type UpdateInfo struct {
+	HasUpdate     bool   `json:"hasUpdate"`
+	LatestVersion string `json:"latestVersion"`
+	ReleaseURL    string `json:"releaseURL"`
+}
+
+// CheckForUpdates queries the GitHub latest-release API at most once per day and
+// reports whether a newer version than AppVersion is available.
+func (a *App) CheckForUpdates() UpdateInfo {
+	const releaseURL = "https://github.com/MHeis22/KiCadLibraryManager/releases/latest"
+	const apiURL = "https://api.github.com/repos/MHeis22/KiCadLibraryManager/releases/latest"
+
+	a.mu.Lock()
+	conf := LoadConfig()
+	a.mu.Unlock()
+
+	if conf.LastUpdateCheck != "" {
+		if t, err := time.Parse(time.RFC3339, conf.LastUpdateCheck); err == nil {
+			if time.Since(t) < 24*time.Hour {
+				return UpdateInfo{}
+			}
+		}
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return UpdateInfo{}
+	}
+	req.Header.Set("User-Agent", "KiCadLibraryManager/"+AppVersion)
+	resp, err := client.Do(req)
+	if err != nil {
+		return UpdateInfo{}
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return UpdateInfo{}
+	}
+
+	a.mu.Lock()
+	conf = LoadConfig()
+	conf.LastUpdateCheck = time.Now().UTC().Format(time.RFC3339)
+	SaveConfig(conf)
+	a.mu.Unlock()
+
+	latest := strings.TrimLeft(result.TagName, "Vv")
+	if latest == "" || latest == AppVersion {
+		return UpdateInfo{}
+	}
+
+	return UpdateInfo{
+		HasUpdate:     true,
+		LatestVersion: latest,
+		ReleaseURL:    releaseURL,
+	}
+}
+
+// DismissUpdate records a version the user dismissed so it isn't shown again.
+func (a *App) DismissUpdate(version string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	conf := LoadConfig()
+	conf.DismissedUpdateVersion = version
+	SaveConfig(conf)
+}
+
+// OpenReleaseURL opens the latest-release page in the user's default browser.
+func (a *App) OpenReleaseURL() {
+	application.Get().Browser.OpenURL("https://github.com/MHeis22/KiCadLibraryManager/releases/latest")
 }

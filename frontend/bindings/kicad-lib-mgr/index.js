@@ -11,5 +11,6 @@ export {
     ComponentEntry,
     Config,
     HistoryItem,
-    Repository
+    Repository,
+    UpdateInfo
 } from "./models.js";
