@@ -18,7 +18,9 @@ import {
     ToggleAutoStart,
     AddCategory,
     RenameCategory,
-    DeleteCategory
+    DeleteCategory,
+    SearchIndex,
+    CategoryCounts
 } from '../bindings/kicad-lib-mgr/app.js';
 
 const setupView = document.getElementById('setup-view');
@@ -38,6 +40,11 @@ const newCategoryInput = document.getElementById('new-category-input');
 const btnSettings = document.getElementById('btn-settings');
 const btnOk = document.getElementById('btn-ok');
 
+// Design block metadata inputs (shown only when a design block is detected)
+const blockMetaGroup = document.getElementById('block-meta-group');
+const blockDescription = document.getElementById('block-description');
+const blockKeywords = document.getElementById('block-keywords');
+
 const watchDirInput = document.getElementById('watch-dir-input');
 const btnBrowseWatch = document.getElementById('btn-browse-watch');
 const repoList = document.getElementById('repo-list');
@@ -56,13 +63,28 @@ const btnConflictProceed = document.getElementById('btn-conflict-proceed');
 
 // UI Toggle Elements (New)
 const navTabLibs = document.getElementById('nav-tab-libs');
+const navTabSearch = document.getElementById('nav-tab-search');
 const navTabCats = document.getElementById('nav-tab-cats');
 const navTabSys = document.getElementById('nav-tab-sys');
 const navTabHelp = document.getElementById('nav-tab-help');
 const contentLibs = document.getElementById('content-libs');
+const contentSearch = document.getElementById('content-search');
 const contentCats = document.getElementById('content-cats');
 const contentSys = document.getElementById('content-sys');
 const contentHelp = document.getElementById('content-help');
+
+// KiCad root library control (Libraries tab)
+const baseLibInput = document.getElementById('base-lib-input');
+const btnChangeBaseLib = document.getElementById('btn-change-base-lib');
+
+// Search tab elements
+const searchInput = document.getElementById('search-input');
+const btnSearchRefresh = document.getElementById('btn-search-refresh');
+const searchFilterRepo = document.getElementById('search-filter-repo');
+const searchFilterCategory = document.getElementById('search-filter-category');
+const searchFilterType = document.getElementById('search-filter-type');
+const searchCount = document.getElementById('search-count');
+const searchResults = document.getElementById('search-results');
 const btnShowAddRepo = document.getElementById('btn-show-add-repo');
 const addRepoContainer = document.getElementById('add-repo-container');
 const tabLocal = document.getElementById('tab-local');
@@ -98,6 +120,9 @@ function showToast(message, type = 'error') {
 // Queue system to handle rapid downloads or multi-file drops
 let fileQueue = [];
 let currentConfig = null;
+let searchIndex = null; // null = not built yet; array once loaded from SearchIndex()
+let categoryCounts = {}; // category name -> part count
+let categoryCountsReady = false; // true once counts have been fetched at least once
 
 document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => {
@@ -119,6 +144,7 @@ async function loadConfig() {
                 switchView(mainView);
             }
             watchDirInput.value = currentConfig.watchDir || "";
+            if (baseLibInput) baseLibInput.value = currentConfig.baseLibPath || "";
             autostartToggle.checked = currentConfig.autoStart || false;
             populateCategories(currentConfig.categories || []);
             populateRepositories(currentConfig.repositories || []);
@@ -241,6 +267,17 @@ function populateCategorySettings(categories) {
         nameSpan.style.flex = "1";
         nameSpan.innerText = cat;
 
+        // Part count badge (symbols + design blocks). Hidden until counts load.
+        const countSpan = document.createElement('span');
+        countSpan.style.cssText = "font-size:0.75rem; color:var(--text-muted); background:rgba(0,0,0,0.2); padding:1px 7px; border-radius:10px; min-width:18px; text-align:center;";
+        if (categoryCountsReady) {
+            const n = categoryCounts[cat] || 0;
+            countSpan.innerText = n;
+            countSpan.title = `${n} part${n === 1 ? '' : 's'} (symbols + design blocks)`;
+        } else {
+            countSpan.style.visibility = 'hidden';
+        }
+
         const renameBtn = document.createElement('button');
         renameBtn.className = 'btn-icon';
         renameBtn.title = 'Rename category';
@@ -281,6 +318,7 @@ function populateCategorySettings(categories) {
                 try {
                     await RenameCategory(cat, newName);
                     await loadConfig();
+                    refreshCategoryCounts();
                 } catch (err) {
                     input.style.borderColor = '#ff5555';
                     input.title = String(err).replace(/^error:/i, '').trim();
@@ -304,16 +342,29 @@ function populateCategorySettings(categories) {
             try {
                 await DeleteCategory(cat);
                 await loadConfig();
+                refreshCategoryCounts();
             } catch (err) {
                 showToast('Delete failed: ' + err);
             }
         });
 
         li.appendChild(nameSpan);
+        li.appendChild(countSpan);
         li.appendChild(renameBtn);
         li.appendChild(deleteBtn);
         categorySettingsList.appendChild(li);
     });
+}
+
+// Fetch per-category part counts and re-render the category list with badges.
+async function refreshCategoryCounts() {
+    try {
+        categoryCounts = await CategoryCounts();
+        categoryCountsReady = true;
+        if (currentConfig) populateCategorySettings(currentConfig.categories || []);
+    } catch (err) {
+        console.error('Failed to load category counts:', err);
+    }
 }
 
 function formatHistoryDate(timestamp) {
@@ -357,6 +408,7 @@ function populateHistory(historyItems) {
                 if (confirm(`Are you sure you want to rollback the most recent import: ${item.filename}?`)) {
                     const success = await UndoAction(item.id);
                     if (success) {
+                        searchIndex = null; // a part was removed — rebuild on next open
                         await loadConfig();
                     } else {
                         showToast("Undo failed — files may have been moved or deleted manually.");
@@ -384,7 +436,11 @@ function resetStandbyUI() {
     
     newCategoryInput.value = "";
     newCategoryInput.classList.add('hidden');
-    
+
+    blockMetaGroup.classList.add('hidden');
+    blockDescription.value = "";
+    blockKeywords.value = "";
+
     btnOk.disabled = true;
     btnOk.style.opacity = "0.5";
     btnOk.style.cursor = "not-allowed";
@@ -412,7 +468,13 @@ async function processNextInQueue() {
     
     newCategoryInput.classList.add('hidden');
     newCategoryInput.value = "";
-    
+
+    // Reset design block metadata fields for the new item; revealed below if the
+    // item actually contains a design block.
+    blockMetaGroup.classList.add('hidden');
+    blockDescription.value = "";
+    blockKeywords.value = "";
+
     btnOk.disabled = false;
     btnOk.style.opacity = "1";
     btnOk.style.cursor = "pointer";
@@ -433,6 +495,10 @@ async function processNextInQueue() {
         if (fileQueue.length > 1) {
             filenameDisplay.innerHTML += `<br><span style="color: var(--accent); font-weight: bold; font-size: 0.85rem; display: inline-block; margin-top: 4px;">Queue: ${fileQueue.length - 1} more file(s) waiting...</span>`;
         }
+        // Offer metadata fields only when the item includes a design block.
+        if (summary && summary.includes("Design Block")) {
+            blockMetaGroup.classList.remove('hidden');
+        }
     } catch (err) {
         filenameDisplay.innerHTML = `<strong>${baseName}</strong>`;
     }
@@ -440,8 +506,8 @@ async function processNextInQueue() {
 
 // UI Toggles (Tabs & Expanders)
 function switchSettingsTab(activeBtn, activeContent) {
-    [navTabLibs, navTabCats, navTabSys, navTabHelp].forEach(b => b.classList.remove('active'));
-    [contentLibs, contentCats, contentSys, contentHelp].forEach(c => c.classList.remove('active'));
+    [navTabLibs, navTabSearch, navTabCats, navTabSys, navTabHelp].forEach(b => b.classList.remove('active'));
+    [contentLibs, contentSearch, contentCats, contentSys, contentHelp].forEach(c => c.classList.remove('active'));
     activeBtn.classList.add('active');
     activeContent.classList.add('active');
 }
@@ -468,9 +534,125 @@ function formatWailsError(err) {
 }
 
 navTabLibs.addEventListener('click', () => switchSettingsTab(navTabLibs, contentLibs));
-navTabCats.addEventListener('click', () => switchSettingsTab(navTabCats, contentCats));
+navTabSearch.addEventListener('click', () => {
+    switchSettingsTab(navTabSearch, contentSearch);
+    if (searchIndex === null) buildSearchIndex(); // lazy build on first open
+    searchInput.focus();
+});
+navTabCats.addEventListener('click', () => {
+    switchSettingsTab(navTabCats, contentCats);
+    refreshCategoryCounts(); // counts are cheap to recompute and may have changed
+});
 navTabSys.addEventListener('click', () => switchSettingsTab(navTabSys, contentSys));
 navTabHelp.addEventListener('click', () => switchSettingsTab(navTabHelp, contentHelp));
+
+// ---- Search / Browse Library ----
+
+function escapeHtml(str) {
+    return String(str ?? "").replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
+function populateSearchFilters() {
+    const repos = [...new Set(searchIndex.map(e => e.repo))].sort();
+    const cats = [...new Set(searchIndex.map(e => e.category))].sort();
+
+    const fill = (sel, values, allLabel) => {
+        const prev = sel.value;
+        sel.innerHTML = `<option value="">${allLabel}</option>` +
+            values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        if (values.includes(prev)) sel.value = prev; // preserve selection across refresh
+    };
+    fill(searchFilterRepo, repos, 'All repos');
+    fill(searchFilterCategory, cats, 'All categories');
+}
+
+async function buildSearchIndex() {
+    searchCount.textContent = 'Building index…';
+    searchResults.innerHTML = '';
+    try {
+        searchIndex = await SearchIndex();
+        populateSearchFilters();
+        renderSearchResults();
+    } catch (err) {
+        searchIndex = [];
+        searchCount.textContent = '';
+        showToast('Failed to build search index: ' + err);
+    }
+}
+
+function renderSearchResults() {
+    if (searchIndex === null) return;
+
+    const q = searchInput.value.trim().toLowerCase();
+    const repoFilter = searchFilterRepo.value;
+    const catFilter = searchFilterCategory.value;
+    const typeFilter = searchFilterType.value;
+
+    const matches = searchIndex.filter(e => {
+        if (repoFilter && e.repo !== repoFilter) return false;
+        if (catFilter && e.category !== catFilter) return false;
+        if (typeFilter && e.type !== typeFilter) return false;
+        if (!q) return true;
+        return (e.name + ' ' + e.description + ' ' + e.keywords + ' ' + e.category)
+            .toLowerCase().includes(q);
+    });
+
+    // Rank name matches above description/keyword matches, then alphabetical.
+    if (q) {
+        matches.sort((a, b) => {
+            const an = a.name.toLowerCase().includes(q) ? 0 : 1;
+            const bn = b.name.toLowerCase().includes(q) ? 0 : 1;
+            return an - bn || a.name.localeCompare(b.name);
+        });
+    } else {
+        matches.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    searchCount.textContent = `${matches.length} of ${searchIndex.length} item(s)`;
+
+    const LIMIT = 300; // keep the DOM light; narrow the query to see more
+    searchResults.innerHTML = matches.slice(0, LIMIT).map(e => {
+        const badge = e.type === 'Design Block' ? '<span>🧩</span>' : '';
+        const desc = e.description ? `<div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 2px;">${escapeHtml(e.description)}</div>` : '';
+        return `<li style="display: block; padding: 8px; background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 6px;">
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+                ${badge}
+                <strong style="color: var(--text-main);">${escapeHtml(e.name)}</strong>
+                <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: auto;">${escapeHtml(e.category)} · ${escapeHtml(e.repo)}</span>
+            </div>
+            <div style="color: var(--accent); font-size: 0.72rem; font-family: monospace; margin-top: 2px;">${escapeHtml(e.reference)}</div>
+            ${desc}
+        </li>`;
+    }).join('');
+
+    if (matches.length === 0) {
+        searchResults.innerHTML = `<li style="color: var(--text-muted); font-size: 0.85rem; padding: 8px;">No matching components found.</li>`;
+    } else if (matches.length > LIMIT) {
+        searchResults.innerHTML += `<li style="color: var(--text-muted); font-size: 0.75rem; padding: 8px;">Showing first ${LIMIT}. Refine your search to see more.</li>`;
+    }
+}
+
+searchInput.addEventListener('input', renderSearchResults);
+searchFilterRepo.addEventListener('change', renderSearchResults);
+searchFilterCategory.addEventListener('change', renderSearchResults);
+searchFilterType.addEventListener('change', renderSearchResults);
+btnSearchRefresh.addEventListener('click', buildSearchIndex);
+
+// ---- Change KiCad root library folder ----
+btnChangeBaseLib.addEventListener('click', async () => {
+    const dir = await SelectDirectory();
+    if (!dir) return;
+    try {
+        await SaveSetup(dir);
+        searchIndex = null; // library root changed — index is stale
+        await loadConfig();
+        showToast('KiCad root library updated.', 'success');
+    } catch (err) {
+        showToast('Failed to update root library: ' + err);
+    }
+});
 
 btnShowAddRepo.addEventListener('click', () => {
     addRepoContainer.classList.toggle('hidden');
@@ -600,10 +782,15 @@ async function processItemWithStrategy(strategy, newName) {
 
     btnConflictProceed.disabled = true;
     btnOk.disabled = true;
-    
+
+    // Design block metadata (empty unless the block fields were shown/filled).
+    const desc = blockMetaGroup.classList.contains('hidden') ? "" : blockDescription.value.trim();
+    const keywords = blockMetaGroup.classList.contains('hidden') ? "" : blockKeywords.value.trim();
+
     try {
-        await ProcessFile(currentFilename, chosenCategory, chosenRepo, strategy, newName);
-        fileQueue.shift(); 
+        await ProcessFile(currentFilename, chosenCategory, chosenRepo, strategy, newName, desc, keywords);
+        fileQueue.shift();
+        searchIndex = null; // a new part was added — rebuild the index on next open
         await loadConfig();
         selectCategory.value = chosenCategory; 
         await processNextInQueue(); 
@@ -679,9 +866,9 @@ btnConflictProceed.addEventListener('click', async () => {
 });
 
 btnConflictCancel.addEventListener('click', async () => {
-    fileQueue.shift(); 
-    await SkipFile(fileQueue[0]); 
-    await processNextInQueue(); 
+    await SkipFile(fileQueue[0]); // log the file being skipped BEFORE removing it
+    fileQueue.shift();
+    await processNextInQueue();
 });
 
 

@@ -6,7 +6,36 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+// In-memory config cache. LoadConfig hits disk + JSON-parses on every call and
+// is invoked very frequently (e.g. getLibNickname on every table write), so we
+// cache the parsed config and refresh it only when SaveConfig writes new data.
+var (
+	configCacheMu sync.RWMutex
+	configCache   *Config
+)
+
+// cloneConfig returns a deep copy so callers can mutate the returned Config
+// (append to slices, write to the keyword map) without corrupting the cache.
+func cloneConfig(c Config) Config {
+	out := c
+	out.Repositories = append([]Repository(nil), c.Repositories...)
+	out.Categories = append([]string(nil), c.Categories...)
+	out.History = make([]HistoryItem, len(c.History))
+	for i, h := range c.History {
+		h.AddedFiles = append([]string(nil), h.AddedFiles...)
+		out.History[i] = h
+	}
+	if c.AutoCategoryMap != nil {
+		out.AutoCategoryMap = make(map[string][]string, len(c.AutoCategoryMap))
+		for k, v := range c.AutoCategoryMap {
+			out.AutoCategoryMap[k] = append([]string(nil), v...)
+		}
+	}
+	return out
+}
 
 // Repository represents a single Git library
 type Repository struct {
@@ -49,7 +78,40 @@ func getConfigPath() string {
 	return filepath.Join(appDir, "config.json")
 }
 
+// symbolBackupPath returns an absolute path, outside any library repo, where the
+// pre-import copy of a category's symbol library is stored for undo. It lives
+// next to the app config so it is never committed to a git-backed library.
+func symbolBackupPath(repoName, category string) string {
+	sanitize := func(s string) string {
+		s = strings.ReplaceAll(s, "/", "_")
+		s = strings.ReplaceAll(s, "\\", "_")
+		return s
+	}
+	dir := filepath.Join(filepath.Dir(getConfigPath()), "backups")
+	return filepath.Join(dir, fmt.Sprintf("%s_%s.kicad_sym.bak", sanitize(repoName), sanitize(category)))
+}
+
 func LoadConfig() Config {
+	configCacheMu.RLock()
+	cached := configCache
+	configCacheMu.RUnlock()
+	if cached != nil {
+		return cloneConfig(*cached)
+	}
+
+	c := loadConfigFromDisk()
+
+	configCacheMu.Lock()
+	if configCache == nil { // don't clobber a value a concurrent SaveConfig just set
+		stored := cloneConfig(c)
+		configCache = &stored
+	}
+	configCacheMu.Unlock()
+
+	return c
+}
+
+func loadConfigFromDisk() Config {
 	path := getConfigPath()
 	data, err := os.ReadFile(path)
 
@@ -113,7 +175,17 @@ func SaveConfig(c Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return err
+	}
+
+	// Refresh the cache so subsequent LoadConfig calls see the new data without
+	// re-reading disk.
+	stored := cloneConfig(c)
+	configCacheMu.Lock()
+	configCache = &stored
+	configCacheMu.Unlock()
+	return nil
 }
 
 func (c *Config) AddCustomCategory(category string) {

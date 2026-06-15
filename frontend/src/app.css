@@ -1,3 +1,28 @@
+/* Inter — self-hosted (latin subset, woff2) so it renders identically and
+   offline on Windows/macOS/Linux. Files live in public/fonts and are served
+   at /fonts by Vite/Wails. */
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/fonts/inter-600.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/fonts/inter-700.woff2") format("woff2");
+}
+
 :root {
     --bg-color: #1e1e2e;
     --card-bg: #282a36;
@@ -13,7 +38,7 @@
 body {
     margin: 0;
     padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-main);
     display: flex;

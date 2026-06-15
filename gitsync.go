@@ -101,14 +101,13 @@ func GitFetchAndCheckStatus(repoPath string) (behind bool, err error) {
 	// Non-destructive: updates remote tracking refs without touching the working tree
 	gitCommand("-C", repoPath, "fetch", "--quiet").Run()
 
-	localHead, err := gitCommand("-C", repoPath, "rev-parse", "HEAD").Output()
+	// Count commits the upstream has that we don't. Comparing HEAD != @{u} would
+	// also flag a repo that is merely *ahead* (unpushed local commits) as behind.
+	out, err := gitCommand("-C", repoPath, "rev-list", "--count", "HEAD..@{u}").Output()
 	if err != nil {
-		return false, nil
-	}
-	remoteHead, err := gitCommand("-C", repoPath, "rev-parse", "@{u}").Output()
-	if err != nil {
-		return false, nil // No upstream configured — not considered behind
+		return false, nil // No upstream configured / detached — not considered behind
 	}
 
-	return strings.TrimSpace(string(localHead)) != strings.TrimSpace(string(remoteHead)), nil
+	count := strings.TrimSpace(string(out))
+	return count != "" && count != "0", nil
 }

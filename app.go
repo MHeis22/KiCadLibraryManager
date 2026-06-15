@@ -18,7 +18,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const AppVersion = "1.13"
+const AppVersion = "1.16"
 
 type App struct {
 	app           *application.App // Updated to *application.App for Wails v3
@@ -27,6 +27,55 @@ type App struct {
 	watcherCancel context.CancelFunc
 	mu            sync.Mutex // protects all LoadConfig/SaveConfig pairs
 	processing    sync.Map
+	assetCache    sync.Map // fullPath -> *extractedItem, shared across Check/Process
+}
+
+// extractedItem caches a single archive extraction so CheckConflicts and
+// ProcessFile don't each unzip the same file. tempDir is owned by the cache and
+// removed on eviction.
+type extractedItem struct {
+	assets  *KiCadAssets
+	tempDir string
+}
+
+// loadAssets returns the cached extraction for fullPath, extracting (and caching)
+// on first use. The temp dir lives until evictAssets/flushAssetCache is called.
+func (a *App) loadAssets(fullPath string) (*KiCadAssets, error) {
+	if v, ok := a.assetCache.Load(fullPath); ok {
+		return v.(*extractedItem).assets, nil
+	}
+	assets, tempDir, err := extractAssets(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := a.assetCache.LoadOrStore(fullPath, &extractedItem{assets: assets, tempDir: tempDir})
+	item := actual.(*extractedItem)
+	// If another goroutine won the race, drop our redundant temp dir.
+	if item.tempDir != tempDir && tempDir != "" {
+		os.RemoveAll(tempDir)
+	}
+	return item.assets, nil
+}
+
+// evictAssets drops the cached extraction for fullPath and deletes its temp dir.
+func (a *App) evictAssets(fullPath string) {
+	if v, ok := a.assetCache.LoadAndDelete(fullPath); ok {
+		if td := v.(*extractedItem).tempDir; td != "" {
+			os.RemoveAll(td)
+		}
+	}
+}
+
+// flushAssetCache removes every cached extraction and its temp dir. Safe to call
+// whenever no import is in flight (e.g. when the window is hidden).
+func (a *App) flushAssetCache() {
+	a.assetCache.Range(func(key, v any) bool {
+		a.assetCache.Delete(key)
+		if td := v.(*extractedItem).tempDir; td != "" {
+			os.RemoveAll(td)
+		}
+		return true
+	})
 }
 
 func NewApp(app *application.App, window *application.WebviewWindow) *App { // Updated here as well
@@ -126,11 +175,16 @@ func (a *App) SyncAllRepositories() error {
 }
 
 func (a *App) StartWatcher() {
+	// Guard the watcher fields: StartWatcher is called from both ServiceStartup
+	// and SelectWatchDirectory. Callers must not already hold a.mu.
+	a.mu.Lock()
 	if a.watcherCancel != nil {
 		a.watcherCancel() // Stop existing watcher if running
 	}
 	a.watcherCtx, a.watcherCancel = context.WithCancel(context.Background())
-	go a.watchFolder(a.watcherCtx)
+	ctx := a.watcherCtx
+	a.mu.Unlock()
+	go a.watchFolder(ctx)
 }
 
 // Helper function to safely wait for a file to finish downloading/copying
@@ -138,7 +192,7 @@ func waitForFileReady(path string) bool {
 	maxRetries := 120 // Increased: Wait up to 60 seconds (120 * 500ms) for AV/SmartScreen
 	var lastSize int64 = -1
 
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		info, err := os.Stat(path) // Use Stat instead of OpenFile to avoid locking
 
 		if err == nil {
@@ -436,6 +490,7 @@ func (a *App) SetDefaultRepository(repoName string) error {
 func (a *App) UndoAction(id string) bool {
 	a.mu.Lock()
 	conf := LoadConfig()
+	baseLibPath := conf.BaseLibPath
 	var newHistory []HistoryItem
 	var target HistoryItem
 	found := false
@@ -461,7 +516,10 @@ func (a *App) UndoAction(id string) bool {
 	a.mu.Unlock()
 
 	for _, f := range target.AddedFiles {
-		os.Remove(f)
+		// RemoveAll (not Remove) because design-block entries are directories
+		// containing the .kicad_sch/.kicad_pcb/.json files; Remove only deletes
+		// empty dirs and would silently leave the block on disk.
+		os.RemoveAll(f)
 		fmt.Println("    [Undo] Removed:", f)
 	}
 
@@ -476,12 +534,32 @@ func (a *App) UndoAction(id string) bool {
 		}
 	}
 
+	// For git-backed repos, commit (and try to push) the reverted state. Without
+	// this the working tree is left dirty, and the next import's pre-emptive
+	// GitPull aborts on "uncommitted local changes", blocking all future syncs.
+	if target.RepoName != "" && baseLibPath != "" {
+		repoRoot := filepath.Join(baseLibPath, target.RepoName)
+		if isGitRepository(repoRoot) {
+			if _, err := GitCommitAndPush(repoRoot, "Undo import of "+target.Filename); err != nil {
+				fmt.Println("    [Undo] Warning: failed to commit undo:", err)
+			}
+		}
+	}
+
 	fmt.Println("--> Successfully undone import of", target.Filename)
 	return true
 }
 
 func (a *App) SkipFile(filename string) {
 	fmt.Printf("--> User chose to skip %s\n", filename)
+	if filename == "" {
+		return
+	}
+	fullPath := filename
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(LoadConfig().WatchDir, filename)
+	}
+	a.evictAssets(fullPath)
 }
 
 func (a *App) HandleDroppedItem(path string) error {
@@ -544,11 +622,15 @@ func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 	var assets *KiCadAssets
 	var tempDir string
 
-	if fileInfo.IsDir() || strings.ToLower(filepath.Ext(fullPath)) != ".zip" {
+	// .epw files are zip archives too; treat them like .zip so their contents
+	// get extracted instead of silently matching no asset type.
+	ext := strings.ToLower(filepath.Ext(fullPath))
+	isArchive := ext == ".zip" || ext == ".epw"
+
+	if fileInfo.IsDir() || !isArchive {
 		assets = &KiCadAssets{}
 
 		if !fileInfo.IsDir() {
-			ext := strings.ToLower(filepath.Ext(fullPath))
 			switch ext {
 			case ".kicad_sym":
 				assets.SymbolPath = fullPath
@@ -566,18 +648,17 @@ func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 				if err != nil || info.IsDir() {
 					return nil
 				}
-				ext := strings.ToLower(filepath.Ext(info.Name()))
-				switch ext {
+				switch strings.ToLower(filepath.Ext(info.Name())) {
 				case ".kicad_sym":
-					assets.SymbolPath = p
+					setAsset(&assets.SymbolPath, p, "symbol")
 				case ".kicad_mod":
-					assets.FootprintPath = p
+					setAsset(&assets.FootprintPath, p, "footprint")
 				case ".step", ".stp", ".wrl":
-					assets.ModelPath = p
+					setAsset(&assets.ModelPath, p, "3D model")
 				case ".kicad_sch":
-					assets.SchBlockPath = p
+					setAsset(&assets.SchBlockPath, p, "schematic block")
 				case ".kicad_pcb":
-					assets.PcbBlockPath = p
+					setAsset(&assets.PcbBlockPath, p, "PCB block")
 				}
 				return nil
 			})
@@ -618,12 +699,9 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 		fullPath = filepath.Join(watchDir, filename)
 	}
 
-	assets, tempDir, err := extractAssets(fullPath)
+	assets, err := a.loadAssets(fullPath)
 	if err != nil {
 		return nil, err
-	}
-	if tempDir != "" {
-		defer os.RemoveAll(tempDir)
 	}
 
 	targetRepoRoot := filepath.Join(baseLibPath, repoName)
@@ -681,10 +759,9 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 		if blockSrc == "" {
 			blockSrc = assets.PcbBlockPath
 		}
-		blockName := autoName
-		if blockName == "" {
-			blockName = strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
-		}
+		// Mirror IntegrateParts: the block is named after its own source file,
+		// independent of the symbol's auto-detected name.
+		blockName := strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
 		blockDir := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category), fmt.Sprintf("%s.kicad_block", blockName))
 		if _, err := os.Stat(blockDir); err == nil {
 			conflicts = append(conflicts, fmt.Sprintf("Design block '%s' already exists in category '%s'.", blockName, category))
@@ -694,7 +771,7 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 	return conflicts, nil
 }
 
-func (a *App) ProcessFile(filename string, category string, repoName string, conflictStrategy string, newName string) error {
+func (a *App) ProcessFile(filename string, category string, repoName string, conflictStrategy string, newName string, blockDescription string, blockKeywords string) error {
 	fmt.Printf("--> Processing %s into the %s category of %s (Strategy: %s)...\n", filename, category, repoName, conflictStrategy)
 
 	// --- Phase 1: read config snapshot and persist any new category ---
@@ -725,13 +802,13 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 		fullPath = filepath.Join(watchDir, filename)
 	}
 
-	assets, tempDir, err := extractAssets(fullPath)
+	assets, err := a.loadAssets(fullPath)
 	if err != nil {
 		return fmt.Errorf("failed to process file assets: %w", err)
 	}
-	if tempDir != "" {
-		defer os.RemoveAll(tempDir)
-	}
+	// The extraction stays cached (shared with CheckConflicts); free it once this
+	// import finishes, success or error.
+	defer a.evictAssets(fullPath)
 
 	if baseLibPath == "" {
 		return fmt.Errorf("base library path is not configured")
@@ -757,7 +834,7 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 	var master, backup string
 	pushed := false
 
-	for attempt := 0; attempt < maxPushRetries; attempt++ {
+	for attempt := range maxPushRetries {
 		if attempt > 0 {
 			fmt.Printf("    [Git] Push rejected, retrying (%d/%d)...\n", attempt, maxPushRetries-1)
 			a.app.Event.Emit("sync-status", "syncing")
@@ -773,7 +850,7 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 		}
 
 		var intErr error
-		addedFiles, master, backup, intErr = IntegrateParts(assets, category, targetRepoRoot, repoName, conflictStrategy, newName)
+		addedFiles, master, backup, intErr = IntegrateParts(assets, category, targetRepoRoot, repoName, conflictStrategy, newName, blockDescription, blockKeywords)
 		if intErr != nil {
 			return fmt.Errorf("integration failed: %w", intErr)
 		}
@@ -830,8 +907,13 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 	}
 	a.mu.Unlock()
 
-	if !filepath.IsAbs(filename) {
-		os.Remove(fullPath)
+	// Only delete the watched source file if we actually imported something from
+	// it. Deleting after a no-op import (e.g. an unrecognized format) would lose
+	// the user's file. Also skip directories — os.Remove can't delete those.
+	if !filepath.IsAbs(filename) && len(addedFiles) > 0 {
+		if info, statErr := os.Stat(fullPath); statErr == nil && !info.IsDir() {
+			os.Remove(fullPath)
+		}
 	}
 
 	return nil
@@ -839,6 +921,9 @@ func (a *App) ProcessFile(filename string, category string, repoName string, con
 
 func (a *App) HideWindow() {
 	fmt.Println("--> User canceled.")
+	// No import is in flight once the window is hidden, so free any temp dirs
+	// left by cached extractions (e.g. after a bulk cancel).
+	a.flushAssetCache()
 	if a.mainWindow != nil {
 		a.mainWindow.Hide()
 	}
@@ -939,14 +1024,14 @@ func (a *App) GuessCategory(filename string) string {
 			return "", 0
 		}
 
-		var textToScan string
+		var textToScan strings.Builder
 		for _, match := range matches {
 			if len(match) > 1 {
-				textToScan += match[1] + " "
+				textToScan.WriteString(match[1] + " ")
 			}
 		}
 
-		words := strings.FieldsFunc(strings.ToLower(textToScan), f)
+		words := strings.FieldsFunc(strings.ToLower(textToScan.String()), f)
 		normalizedText := " " + strings.Join(words, " ") + " "
 
 		var bestMatch string

@@ -7,6 +7,82 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * ComponentEntry is a single searchable item (a symbol or a design block) found
+ * by scanning the registered library repositories on disk.
+ */
+export class ComponentEntry {
+    /**
+     * Creates a new ComponentEntry instance.
+     * @param {Partial<ComponentEntry>} [$$source = {}] - The source object to create the ComponentEntry.
+     */
+    constructor($$source = {}) {
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("type" in $$source)) {
+            /**
+             * "Symbol" | "Design Block"
+             * @member
+             * @type {string}
+             */
+            this["type"] = "";
+        }
+        if (!("repo" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo"] = "";
+        }
+        if (!("category" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["category"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+        if (!("keywords" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["keywords"] = "";
+        }
+        if (!("reference" in $$source)) {
+            /**
+             * KiCad library reference: nickname:name
+             * @member
+             * @type {string}
+             */
+            this["reference"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ComponentEntry instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ComponentEntry}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ComponentEntry(/** @type {Partial<ComponentEntry>} */($$parsedSource));
+    }
+}
+
+/**
  * Config represents the user's saved settings
  */
 export class Config {

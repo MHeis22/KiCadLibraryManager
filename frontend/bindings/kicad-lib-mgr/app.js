@@ -28,6 +28,18 @@ export function AddRepository(name, url) {
 }
 
 /**
+ * CategoryCounts returns the number of indexed items (symbols + design blocks)
+ * per category, summed across all repositories. Categories with no items are
+ * simply absent from the map (the frontend defaults those to 0).
+ * @returns {$CancellablePromise<{ [_ in string]?: number }>}
+ */
+export function CategoryCounts() {
+    return $Call.ByID(4283752233).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * CheckConflicts scans the target library locations and checks if any files with matching names already exist.
  * @param {string} filename
  * @param {string} category
@@ -36,7 +48,7 @@ export function AddRepository(name, url) {
  */
 export function CheckConflicts(filename, category, repoName) {
     return $Call.ByID(2224678442, filename, category, repoName).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -53,7 +65,7 @@ export function DeleteCategory(name) {
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType2($result);
     }));
 }
 
@@ -94,10 +106,12 @@ export function HideWindow() {
  * @param {string} repoName
  * @param {string} conflictStrategy
  * @param {string} newName
+ * @param {string} blockDescription
+ * @param {string} blockKeywords
  * @returns {$CancellablePromise<void>}
  */
-export function ProcessFile(filename, category, repoName, conflictStrategy, newName) {
-    return $Call.ByID(3913388868, filename, category, repoName, conflictStrategy, newName);
+export function ProcessFile(filename, category, repoName, conflictStrategy, newName, blockDescription, blockKeywords) {
+    return $Call.ByID(3913388868, filename, category, repoName, conflictStrategy, newName, blockDescription, blockKeywords);
 }
 
 /**
@@ -124,6 +138,19 @@ export function RenameCategory(oldName, newName) {
  */
 export function SaveSetup(path) {
     return $Call.ByID(1847944557, path);
+}
+
+/**
+ * SearchIndex scans every registered repository's symbol libraries and design
+ * block folders and returns a flat, searchable index. It reads the filesystem
+ * (not the import history), so it also surfaces parts from cloned/pre-existing
+ * libraries. The frontend filters this list locally as the user types.
+ * @returns {$CancellablePromise<$models.ComponentEntry[]>}
+ */
+export function SearchIndex() {
+    return $Call.ByID(3560523095).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
 }
 
 /**
@@ -193,5 +220,8 @@ export function UndoAction(id) {
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = $models.Config.createFrom;
+const $$createType0 = $Create.Map($Create.Any, $Create.Any);
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = $models.Config.createFrom;
+const $$createType3 = $models.ComponentEntry.createFrom;
+const $$createType4 = $Create.Array($$createType3);

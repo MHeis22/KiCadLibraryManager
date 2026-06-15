@@ -19,6 +19,17 @@ type KiCadAssets struct {
 	PcbBlockPath  string
 }
 
+// setAsset records a discovered asset path. Only a single asset per type is
+// imported, so if one was already found we keep the latest and warn that the
+// earlier one is being ignored rather than dropping it silently.
+func setAsset(field *string, path, label string) {
+	if *field != "" {
+		fmt.Printf("Warning: multiple %s files found; using %q and ignoring %q\n",
+			label, filepath.Base(path), filepath.Base(*field))
+	}
+	*field = path
+}
+
 // PeekForKiCad checks the zip headers WITHOUT extracting to see if it's relevant
 func PeekForKiCad(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -77,15 +88,15 @@ func ExtractAndFind(zipPath string) (*KiCadAssets, string, error) {
 			ext := strings.ToLower(filepath.Ext(info.Name()))
 			switch ext {
 			case ".kicad_sym":
-				assets.SymbolPath = path
+				setAsset(&assets.SymbolPath, path, "symbol")
 			case ".kicad_mod":
-				assets.FootprintPath = path
+				setAsset(&assets.FootprintPath, path, "footprint")
 			case ".step", ".stp", ".wrl":
-				assets.ModelPath = path
+				setAsset(&assets.ModelPath, path, "3D model")
 			case ".kicad_sch":
-				assets.SchBlockPath = path
+				setAsset(&assets.SchBlockPath, path, "schematic block")
 			case ".kicad_pcb":
-				assets.PcbBlockPath = path
+				setAsset(&assets.PcbBlockPath, path, "PCB block")
 			}
 		}
 		return nil

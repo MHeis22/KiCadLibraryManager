@@ -19,7 +19,7 @@ Adding a downloaded component to KiCad involves many manual steps:
 2. Move each file type to its specific library folder
 3. Manually patch 3D model paths inside `.kicad_mod` footprint files
 4. Append symbol definitions into the correct `.kicad_sym` library file
-5. Register each new library in KiCad's `sym-lib-table` and `fp-lib-table`
+5. Register each new library in KiCad's `sym-lib-table`, `fp-lib-table`, and `design-block-lib-table`
 
 **This tool reduces all of that to a single confirmation click.**
 
@@ -30,10 +30,12 @@ Adding a downloaded component to KiCad involves many manual steps:
 - **Watch folder integration** — monitors a folder (e.g. Downloads) for new KiCad-compatible files; automatically surfaces the UI when something is detected
 - **Drag and drop** — drag `.zip`, `.epw`, or individual KiCad files/folders directly onto the app window
 - **Auto-categorisation** — reads `ki_description` and `ki_keywords` from symbol files to suggest the right library category
+- **Design blocks** — imports `.kicad_sch`/`.kicad_pcb` design blocks into KiCad's design block libraries, with optional description/keywords metadata entered at import time
+- **Library search** — a Search tab browses every symbol and design block across all repositories, filterable by name, keywords, repo, category, and type
 - **Conflict detection** — checks for duplicate symbols, footprints, and 3D models before importing, with skip/overwrite/rename options
 - **Multi-repository support** — organise your library into multiple named repositories; optionally back each one with a remote Git URL
 - **Git sync** — auto-pulls before import and pushes after, with push-rejection retry logic (up to 3 attempts)
-- **Undo** — reverts the last import by removing added files and restoring the symbol library backup
+- **Undo** — reverts the last import by removing added files and restoring the symbol library backup (and commits the rollback for Git-backed repos)
 - **Import history** — keeps the last 10 imports for reference and undo
 - **Auto-start on login** — optional 1-click system startup registration (Windows)
 - **macOS tray behaviour** — runs as an Accessory app (no Dock icon) to stay out of the way
@@ -55,11 +57,11 @@ Adding a downloaded component to KiCad involves many manual steps:
 ### First-run setup
 
 1. The settings window opens automatically on first launch.
-2. Set your **Base Library Path** — the root folder where all library subfolders will be created.
+2. Set your **KiCad Root Library Folder** — the root folder where all library subfolders will be created. You can change this later in Settings → Libraries.
 3. Set your **Watch Directory** — the folder to monitor for new files (defaults to `~/Downloads`).
 4. Optionally add one or more named repositories. You can link each to a remote Git URL for syncing across machines.
 
-The app registers itself with KiCad's `sym-lib-table` and `fp-lib-table` automatically after you save settings. No manual KiCad configuration needed.
+The app registers itself with KiCad's `sym-lib-table`, `fp-lib-table`, and `design-block-lib-table` automatically after you save settings. No manual KiCad configuration needed.
 
 ---
 
@@ -72,9 +74,9 @@ The app registers itself with KiCad's `sym-lib-table` and `fp-lib-table` automat
 5. On confirmation, the app:
    - Extracts the archive to a temp directory
    - Copies each file type to the correct subfolder inside your library
-   - Patches `${KICAD_USER_LIBRARY}` path references in footprint files
+   - Patches `${KICAD_USER_3DMODEL_DIR}` 3D-model path references in footprint files
    - Appends the symbol to the category's `.kicad_sym` master file (backing up first)
-   - Commits and pushes if the target repository if Git-backed
+   - Commits and pushes if the target repository is Git-backed
 6. A history record is saved, enabling one-click undo.
 
 ---
