@@ -8,15 +8,20 @@ jobs:
       fail-fast: false # Prevents one OS failure from instantly canceling the others
       matrix:
         include:
+          # Linux: build the binary only. Full multi-format packaging
+          # (AppImage/deb/rpm/aur) is fragile on generic CI runners.
           - os: ubuntu-latest
             platform: linux
-            artifact: linux-package
+            artifact: linux-binary
+            task: build
           - os: macos-latest
             platform: darwin
             artifact: mac-package
+            task: package
           - os: windows-latest
             platform: windows
             artifact: windows-package
+            task: package
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,8 +46,8 @@ jobs:
         # (e.g. "could not import C (no metadata for C)" on cgo platforms).
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.103
 
-      - name: Package Application
-        run: wails3 task package PLATFORM=${{ matrix.platform }} CONFIG=production
+      - name: Build / Package Application
+        run: wails3 task ${{ matrix.task }} PLATFORM=${{ matrix.platform }} CONFIG=production
 
       - name: Upload Package
         uses: actions/upload-artifact@v4
