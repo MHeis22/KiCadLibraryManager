@@ -10,6 +10,7 @@ export {
 export {
     ComponentEntry,
     Config,
+    DuplicateInfo,
     HistoryItem,
     Repository,
     UpdateInfo

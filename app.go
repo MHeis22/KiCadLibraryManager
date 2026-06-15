@@ -1107,6 +1107,65 @@ func (a *App) GuessCategory(filename string) string {
 	return finalMatch
 }
 
+// FindDuplicates reports every library (repo + category) that already contains a
+// symbol with the same name as the incoming part. Informational only — it does
+// not block import. Returns nil when there's no symbol to match against.
+func (a *App) FindDuplicates(filename string) ([]DuplicateInfo, error) {
+	conf := LoadConfig()
+	if conf.BaseLibPath == "" {
+		return nil, nil
+	}
+
+	fullPath := filename
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(conf.WatchDir, filename)
+	}
+
+	// Reuse the shared extraction cache (this runs before CheckConflicts).
+	assets, err := a.loadAssets(fullPath)
+	if err != nil || assets == nil || assets.SymbolPath == "" {
+		return nil, nil
+	}
+
+	srcBytes, err := os.ReadFile(assets.SymbolPath)
+	if err != nil {
+		return nil, nil
+	}
+	nameRe := regexp.MustCompile(`\(\s*symbol\s+"([^"]+)"`)
+	match := nameRe.FindSubmatch(srcBytes)
+	if len(match) < 2 {
+		return nil, nil
+	}
+	targetName := string(match[1])
+	needle := fmt.Sprintf(`(symbol "%s"`, targetName)
+
+	var results []DuplicateInfo
+	for _, repo := range conf.Repositories {
+		symDir := filepath.Join(conf.BaseLibPath, repo.Name, "symbols")
+		entries, err := os.ReadDir(symDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".kicad_sym") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(symDir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			if strings.Contains(string(content), needle) {
+				results = append(results, DuplicateInfo{
+					Name:     targetName,
+					Category: strings.TrimSuffix(entry.Name(), ".kicad_sym"),
+					Repo:     repo.Name,
+				})
+			}
+		}
+	}
+	return results, nil
+}
+
 // UpdateInfo is returned to the frontend to drive the "update available" modal.
 type UpdateInfo struct {
 	HasUpdate     bool   `json:"hasUpdate"`

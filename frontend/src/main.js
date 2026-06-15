@@ -23,7 +23,8 @@ import {
     CategoryCounts,
     CheckForUpdates,
     DismissUpdate,
-    OpenReleaseURL
+    OpenReleaseURL,
+    FindDuplicates
 } from '../bindings/kicad-lib-mgr/app.js';
 
 const setupView = document.getElementById('setup-view');
@@ -280,8 +281,13 @@ function populateRepositories(repositories) {
         repoList.appendChild(li);
     });
 
-    if (defaultRepo) {
+    // Select the default repo if it still exists; otherwise fall back to the
+    // first option so a removed/stale default doesn't leave the select empty.
+    const defaultExists = Array.from(repositorySelect.options).some(o => o.value === defaultRepo);
+    if (defaultRepo && defaultExists) {
         repositorySelect.value = defaultRepo;
+    } else if (repositorySelect.options.length > 0) {
+        repositorySelect.value = repositorySelect.options[0].value;
     }
 }
 
@@ -533,6 +539,17 @@ async function processNextInQueue() {
     } catch (err) {
         filenameDisplay.innerHTML = `<strong>${baseName}</strong>`;
     }
+
+    // Duplicate detection — informational warning only, does not block import.
+    try {
+        const dupes = await FindDuplicates(currentFilename);
+        if (dupes && dupes.length > 0) {
+            const shown = dupes.slice(0, 3);
+            const extra = dupes.length > 3 ? ` <em>…and ${dupes.length - 3} more</em>` : '';
+            const lines = shown.map(d => `${d.name} in <strong>${d.category}</strong> (${d.repo})`).join(', ');
+            filenameDisplay.innerHTML += `<br><span style="color: #ffb86c; font-size: 0.82rem;">⚠️ Already in library: ${lines}${extra}</span>`;
+        }
+    } catch (_) {}
 }
 
 // UI Toggles (Tabs & Expanders)
@@ -897,9 +914,11 @@ btnConflictProceed.addEventListener('click', async () => {
 });
 
 btnConflictCancel.addEventListener('click', async () => {
-    await SkipFile(fileQueue[0]); // log the file being skipped BEFORE removing it
-    fileQueue.shift();
-    await processNextInQueue();
+    if (fileQueue.length > 0) {
+        await SkipFile(fileQueue[0]); // log the file being skipped BEFORE removing it
+        fileQueue.shift();
+        await processNextInQueue();
+    }
 });
 
 

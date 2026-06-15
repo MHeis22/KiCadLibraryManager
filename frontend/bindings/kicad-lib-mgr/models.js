@@ -200,6 +200,52 @@ export class Config {
 }
 
 /**
+ * DuplicateInfo describes an existing library location that already contains a
+ * symbol with the same name as an incoming part (shown as an import warning).
+ */
+export class DuplicateInfo {
+    /**
+     * Creates a new DuplicateInfo instance.
+     * @param {Partial<DuplicateInfo>} [$$source = {}] - The source object to create the DuplicateInfo.
+     */
+    constructor($$source = {}) {
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("category" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["category"] = "";
+        }
+        if (!("repo" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DuplicateInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DuplicateInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DuplicateInfo(/** @type {Partial<DuplicateInfo>} */($$parsedSource));
+    }
+}
+
+/**
  * HistoryItem tracks an integration event for undo purposes
  */
 export class HistoryItem {

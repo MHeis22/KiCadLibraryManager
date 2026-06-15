@@ -81,11 +81,24 @@ export function DismissUpdate(version) {
 }
 
 /**
+ * FindDuplicates reports every library (repo + category) that already contains a
+ * symbol with the same name as the incoming part. Informational only — it does
+ * not block import. Returns nil when there's no symbol to match against.
+ * @param {string} filename
+ * @returns {$CancellablePromise<$models.DuplicateInfo[]>}
+ */
+export function FindDuplicates(filename) {
+    return $Call.ByID(2158640096, filename).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.Config>}
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType5($result);
     }));
 }
 
@@ -177,7 +190,7 @@ export function SaveSetup(path) {
  */
 export function SearchIndex() {
     return $Call.ByID(3560523095).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType7($result);
     }));
 }
 
@@ -251,6 +264,8 @@ export function UndoAction(id) {
 const $$createType0 = $Create.Map($Create.Any, $Create.Any);
 const $$createType1 = $Create.Array($Create.Any);
 const $$createType2 = $models.UpdateInfo.createFrom;
-const $$createType3 = $models.Config.createFrom;
-const $$createType4 = $models.ComponentEntry.createFrom;
-const $$createType5 = $Create.Array($$createType4);
+const $$createType3 = $models.DuplicateInfo.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $models.Config.createFrom;
+const $$createType6 = $models.ComponentEntry.createFrom;
+const $$createType7 = $Create.Array($$createType6);

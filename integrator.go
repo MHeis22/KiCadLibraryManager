@@ -153,6 +153,9 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 		if conflictStrategy == "rename" && newName != "" {
 			blockName = newName
 		}
+		if blockName == "" {
+			return addedFiles, masterSym, backupSym, fmt.Errorf("cannot determine design block name from source file")
+		}
 
 		blockDir := filepath.Join(blocksLibFolder, fmt.Sprintf("%s.kicad_block", blockName))
 		if err := os.MkdirAll(blockDir, os.ModePerm); err != nil {

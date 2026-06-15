@@ -43,6 +43,14 @@ type Repository struct {
 	URL  string `json:"url"`
 }
 
+// DuplicateInfo describes an existing library location that already contains a
+// symbol with the same name as an incoming part (shown as an import warning).
+type DuplicateInfo struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Repo     string `json:"repo"`
+}
+
 // HistoryItem tracks an integration event for undo purposes
 type HistoryItem struct {
 	ID           string   `json:"id"`
