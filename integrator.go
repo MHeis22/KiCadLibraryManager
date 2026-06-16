@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 )
 
@@ -756,15 +754,9 @@ func getOSKiCadLibType() string {
 		}
 	}
 
-	// Windows-specific fallback
-	if runtime.GOOS == "windows" {
-		out, err := exec.Command("reg", "query", "HKCU\\Control Panel\\International", "/v", "LocaleName").Output()
-		if err == nil {
-			val := strings.ToLower(string(out))
-			if affected, name := getKiCadTranslatedName(extractLocaleFromReg(val)); affected {
-				return name
-			}
-		}
+	// Windows-specific fallback (executes reg query with command window hidden)
+	if affected, name := osAffectedLocaleWindows(); affected {
+		return name
 	}
 
 	return "KiCad"
