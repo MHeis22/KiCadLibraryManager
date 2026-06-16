@@ -629,7 +629,7 @@ func extractAssets(fullPath string) (*KiCadAssets, string, error) {
 	isArchive := ext == ".zip" || ext == ".epw"
 
 	if fileInfo.IsDir() || !isArchive {
-		assets = &KiCadAssets{}
+		assets = &KiCadAssets{SourcePath: fullPath}
 
 		if !fileInfo.IsDir() {
 			switch ext {
@@ -760,9 +760,8 @@ func (a *App) CheckConflicts(filename string, category string, repoName string) 
 		if blockSrc == "" {
 			blockSrc = assets.PcbBlockPath
 		}
-		// Mirror IntegrateParts: the block is named after its own source file,
-		// independent of the symbol's auto-detected name.
-		blockName := strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
+		// Mirror IntegrateParts: resolve block name using helper function.
+		blockName := getBlockName(assets)
 		blockDir := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category), fmt.Sprintf("%s.kicad_block", blockName))
 		if _, err := os.Stat(blockDir); err == nil {
 			conflicts = append(conflicts, fmt.Sprintf("Design block '%s' already exists in category '%s'.", blockName, category))

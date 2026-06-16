@@ -148,7 +148,7 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			blockSrc = assets.PcbBlockPath
 		}
 
-		blockName := strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
+		blockName := getBlockName(assets)
 		// A manual rename from the UI overrides the source-derived name.
 		if conflictStrategy == "rename" && newName != "" {
 			blockName = newName
@@ -651,4 +651,43 @@ func getLibNickname(repoName, category string) string {
 		return category // Clean name: e.g., "Connectors"
 	}
 	return fmt.Sprintf("%s_%s", repoName, category) // Safe name: e.g., "Github_Connectors"
+}
+
+func getBlockName(assets *KiCadAssets) string {
+	blockSrc := assets.SchBlockPath
+	if blockSrc == "" {
+		blockSrc = assets.PcbBlockPath
+	}
+	if blockSrc == "" {
+		return ""
+	}
+
+	// 1. If the block source file's parent folder ends in ".kicad_block", use that folder's name
+	parentDir := filepath.Dir(blockSrc)
+	parentName := filepath.Base(parentDir)
+	if strings.HasSuffix(strings.ToLower(parentName), ".kicad_block") {
+		return strings.TrimSuffix(parentName, filepath.Ext(parentName))
+	}
+
+	// 2. If the block source filename is NOT "design_block", use its base name
+	baseName := strings.TrimSuffix(filepath.Base(blockSrc), filepath.Ext(blockSrc))
+	if strings.ToLower(baseName) != "design_block" {
+		return baseName
+	}
+
+	// 3. If the block source filename is generic ("design_block"), try to use the name of the original dropped source file/folder
+	if assets.SourcePath != "" {
+		srcBase := filepath.Base(assets.SourcePath)
+		srcBaseNoExt := strings.TrimSuffix(srcBase, filepath.Ext(srcBase))
+		// Remove any .kicad_block suffix if present in the source path/name
+		if strings.HasSuffix(strings.ToLower(srcBaseNoExt), ".kicad_block") {
+			srcBaseNoExt = strings.TrimSuffix(srcBaseNoExt, filepath.Ext(srcBaseNoExt))
+		}
+		if srcBaseNoExt != "" && strings.ToLower(srcBaseNoExt) != "design_block" {
+			return srcBaseNoExt
+		}
+	}
+
+	// 4. Fallback to "design_block"
+	return "design_block"
 }

@@ -17,6 +17,7 @@ type KiCadAssets struct {
 	ModelPath     string
 	SchBlockPath  string
 	PcbBlockPath  string
+	SourcePath    string
 }
 
 // setAsset records a discovered asset path. Only a single asset per type is
@@ -79,7 +80,7 @@ func ExtractAndFind(zipPath string) (*KiCadAssets, string, error) {
 		return nil, "", fmt.Errorf("failed to unzip: %w", err)
 	}
 
-	assets := &KiCadAssets{}
+	assets := &KiCadAssets{SourcePath: zipPath}
 	err = filepath.Walk(tempDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
