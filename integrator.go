@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -619,22 +621,42 @@ func UpdateKiCadBlockTable(libNickname, libPath string) error {
 		}
 
 		sContent := string(content)
-		if strings.Contains(sContent, fmt.Sprintf("(name %q)", libNickname)) {
-			continue
+
+		// Determine the library type string dynamically based on the user's active locale
+		libType := getKiCadLibType()
+
+		modified := false
+
+		// Repair any existing incorrect types in the table (translated or standard)
+		allKnownTypes := []string{"KiCad", "KiCad (ohjelma)", "كيكاد", "மண்", "คีแคด"}
+		for _, kt := range allKnownTypes {
+			if kt == libType {
+				continue
+			}
+			searchType := fmt.Sprintf(`(type %q)`, kt)
+			replaceType := fmt.Sprintf(`(type %q)`, libType)
+			if strings.Contains(sContent, searchType) {
+				sContent = strings.ReplaceAll(sContent, searchType, replaceType)
+				modified = true
+			}
 		}
 
-		entryStr := fmt.Sprintf("  (lib (name %q)(type \"KiCad\")(uri %q)(options \"\")(descr \"Added by KiCadLibMgr\"))\n", libNickname, libPath)
-		lastIdx := strings.LastIndex(sContent, ")")
-		if lastIdx == -1 {
-			continue
+		if !strings.Contains(sContent, fmt.Sprintf("(name %q)", libNickname)) {
+			entryStr := fmt.Sprintf("  (lib (name %q)(type %q)(uri %q)(options \"\")(descr \"Added by KiCadLibMgr\"))\n", libNickname, libType, libPath)
+			lastIdx := strings.LastIndex(sContent, ")")
+			if lastIdx != -1 {
+				sContent = sContent[:lastIdx] + entryStr + ")\n"
+				modified = true
+			}
 		}
 
-		newContent := sContent[:lastIdx] + entryStr + ")\n"
-		if err := os.WriteFile(tablePath, []byte(newContent), 0644); err != nil {
-			fmt.Printf("Warning: failed to write design_block_lib_table for KiCad %s: %v\n", entry.Name(), err)
-			continue
+		if modified {
+			if err := os.WriteFile(tablePath, []byte(sContent), 0644); err != nil {
+				fmt.Printf("Warning: failed to write design-block-lib-table for KiCad %s: %v\n", entry.Name(), err)
+				continue
+			}
+			fmt.Printf("--> Updated and registered design block library %s in KiCad %s\n", libNickname, entry.Name())
 		}
-		fmt.Printf("--> Registered design block library %s in KiCad %s\n", libNickname, entry.Name())
 	}
 	return nil
 }
@@ -690,4 +712,93 @@ func getBlockName(assets *KiCadAssets) string {
 
 	// 4. Fallback to "design_block"
 	return "design_block"
+}
+
+func getKiCadLibType() string {
+	// 1. Check KiCad's config
+	kicadBase := filepath.Join(kicadConfigDir(), "kicad")
+	if entries, err := os.ReadDir(kicadBase); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() && kicadVersionRegex.MatchString(entry.Name()) {
+				commonJsonPath := filepath.Join(kicadBase, entry.Name(), "kicad_common.json")
+				if fileBytes, err := os.ReadFile(commonJsonPath); err == nil {
+					var configData map[string]any
+					if err := json.Unmarshal(fileBytes, &configData); err == nil {
+						if sys, ok := configData["system"].(map[string]any); ok {
+							if lang, ok := sys["language"].(string); ok {
+								lang = strings.ToLower(lang)
+								if lang != "default" && lang != "" {
+									if affected, name := getKiCadTranslatedName(lang); affected {
+										return name
+									}
+									return "KiCad"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. If KiCad is set to "Default" (or not specified), check OS locale
+	return getOSKiCadLibType()
+}
+
+func getOSKiCadLibType() string {
+	// Check standard Unix env vars
+	for _, env := range []string{"LANG", "LC_ALL", "LC_MESSAGES"} {
+		val := strings.ToLower(os.Getenv(env))
+		if val != "" {
+			if affected, name := getKiCadTranslatedName(val); affected {
+				return name
+			}
+		}
+	}
+
+	// Windows-specific fallback
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("reg", "query", "HKCU\\Control Panel\\International", "/v", "LocaleName").Output()
+		if err == nil {
+			val := strings.ToLower(string(out))
+			if affected, name := getKiCadTranslatedName(extractLocaleFromReg(val)); affected {
+				return name
+			}
+		}
+	}
+
+	return "KiCad"
+}
+
+func getKiCadTranslatedName(lang string) (bool, string) {
+	lang = strings.ToLower(lang)
+	if lang == "fi" || strings.HasPrefix(lang, "fi_") || strings.HasPrefix(lang, "fi-") {
+		return true, "KiCad (ohjelma)"
+	}
+	if lang == "ar" || strings.HasPrefix(lang, "ar_") || strings.HasPrefix(lang, "ar-") {
+		return true, "كيكاد"
+	}
+	if lang == "ta" || strings.HasPrefix(lang, "ta_") || strings.HasPrefix(lang, "ta-") {
+		return true, "மண்"
+	}
+	if lang == "th" || strings.HasPrefix(lang, "th_") || strings.HasPrefix(lang, "th-") {
+		return true, "คีแคด"
+	}
+	return false, "KiCad"
+}
+
+func extractLocaleFromReg(regOutput string) string {
+	// Simple lookup in the output of reg query
+	for _, lang := range []string{"fi-fi", "fi_", "fi-", "ar-", "ar_", "ta-", "ta_", "th-", "th_"} {
+		if strings.Contains(regOutput, lang) {
+			return strings.Split(lang, "-")[0] // return fi, ar, ta, th
+		}
+	}
+	// Direct checks for two-letter codes as fallback
+	for _, lang := range []string{"fi", "ar", "ta", "th"} {
+		if strings.Contains(regOutput, " "+lang) || strings.Contains(regOutput, "\t"+lang) {
+			return lang
+		}
+	}
+	return ""
 }
