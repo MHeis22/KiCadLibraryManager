@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,12 @@ func IntegrateParts(assets *KiCadAssets, category string, targetRepoRoot string,
 			return nil, "", "", fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
+
+	// Register the category's libraries up front. Previously the tables were
+	// only updated when a symbol or footprint was imported, so an import that
+	// carried only a 3D model into a new category created the folders but never
+	// made the library visible in KiCad.
+	ensureCategoryLibraries(targetRepoRoot, repoName, category)
 
 	var finalModelName string
 	var addedFiles []string
@@ -256,35 +263,44 @@ func InitializeKiCadLibraries(conf Config) {
 	for _, repo := range conf.Repositories {
 		targetRepoRoot := filepath.Join(conf.BaseLibPath, repo.Name)
 		for _, category := range conf.Categories {
-			nickname := getLibNickname(repo.Name, category)
-
-			// Setup Footprint Library Folder
-			prettyPath := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
-			os.MkdirAll(prettyPath, os.ModePerm)
-			UpdateKiCadFpTable(nickname, prettyPath)
-
-			// Setup Symbol Library File
-			symDir := filepath.Join(targetRepoRoot, "symbols")
-			symPath := filepath.Join(symDir, fmt.Sprintf("%s.kicad_sym", category))
-
-			if _, err := os.Stat(symPath); os.IsNotExist(err) {
-				os.MkdirAll(symDir, os.ModePerm)
-				emptyLib := "(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)\n)\n"
-				if writeErr := os.WriteFile(symPath, []byte(emptyLib), 0644); writeErr != nil {
-					fmt.Printf("Warning: failed to create symbol library %s: %v\n", symPath, writeErr)
-				}
-			}
-			UpdateKiCadSymTable(nickname, symPath)
-
-			// Setup Design Block Library Folder (an empty .kicad_blocks folder is
-			// a valid, empty design block library). Registering it here means
-			// categories appear in KiCad's design block browser immediately and
-			// existing categories get migrated to the correct table file.
-			blocksPath := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category))
-			os.MkdirAll(blocksPath, os.ModePerm)
-			UpdateKiCadBlockTable(nickname, blocksPath)
+			ensureCategoryLibraries(targetRepoRoot, repo.Name, category)
 		}
 	}
+}
+
+// emptySymbolLib is the content of a fresh, empty KiCad symbol library.
+const emptySymbolLib = "(kicad_symbol_lib (version 20211014) (generator kicad_symbol_editor)\n)\n"
+
+// ensureCategoryLibraries makes sure a category has its footprint folder, symbol
+// library file and design block folder on disk, and that all three are
+// registered in KiCad's global library tables. It is idempotent: existing files
+// are left untouched and already-registered libraries are skipped.
+func ensureCategoryLibraries(targetRepoRoot, repoName, category string) {
+	nickname := getLibNickname(repoName, category)
+
+	// Footprint library folder
+	prettyPath := filepath.Join(targetRepoRoot, "footprints", fmt.Sprintf("%s.pretty", category))
+	os.MkdirAll(prettyPath, os.ModePerm)
+	UpdateKiCadFpTable(nickname, prettyPath)
+
+	// Symbol library file (KiCad refuses to load a table entry whose file is missing)
+	symDir := filepath.Join(targetRepoRoot, "symbols")
+	symPath := filepath.Join(symDir, fmt.Sprintf("%s.kicad_sym", category))
+	if _, err := os.Stat(symPath); os.IsNotExist(err) {
+		os.MkdirAll(symDir, os.ModePerm)
+		if writeErr := os.WriteFile(symPath, []byte(emptySymbolLib), 0644); writeErr != nil {
+			fmt.Printf("Warning: failed to create symbol library %s: %v\n", symPath, writeErr)
+		}
+	}
+	UpdateKiCadSymTable(nickname, symPath)
+
+	// Design block library folder (an empty .kicad_blocks folder is a valid,
+	// empty design block library). Registering it means categories appear in
+	// KiCad's design block browser immediately and existing categories get
+	// migrated to the correct table file.
+	blocksPath := filepath.Join(targetRepoRoot, "blocks", fmt.Sprintf("%s.kicad_blocks", category))
+	os.MkdirAll(blocksPath, os.ModePerm)
+	UpdateKiCadBlockTable(nickname, blocksPath)
 }
 
 func injectSymbol(sourceFile, masterFile, category, footprintName, repoName string, conflictStrategy string, newName string) error {
@@ -471,9 +487,7 @@ func patchFootprint(src, dest, category, newFpName, modelFileName, repoName stri
 
 	// 1. Patch the internal footprint name so KiCad doesn't complain about mismatches
 	if newFpName != "" {
-		// Targets the very first line: e.g. (footprint "OldMessyName" or (module "OldMessyName"
-		reFpName := regexp.MustCompile(`(?i)^(\s*\(\s*(?:footprint|module)\s+)"[^"]+"`)
-		content = reFpName.ReplaceAllString(content, `${1}"`+newFpName+`"`)
+		content = renameFootprint(content, newFpName)
 	}
 
 	// 2. Patch the 3D model path
@@ -493,6 +507,21 @@ func patchFootprint(src, dest, category, newFpName, modelFileName, repoName stri
 	}
 
 	return os.WriteFile(dest, []byte(content), 0644)
+}
+
+// reFpName matches the footprint's own name in the file's first s-expression,
+// quoted or not: (footprint "OldMessyName" ...), (module "OldMessyName" ...) or
+// the unquoted form SnapMagic/SnapEDA writes, (footprint OldMessyName ...).
+var reFpName = regexp.MustCompile(`(?i)^(\s*\(\s*(?:footprint|module)\s+)(?:"(?:[^"\\]|\\.)*"|[^\s()"]+)`)
+
+// renameFootprint rewrites the footprint's internal name so it matches the
+// .kicad_mod file name; KiCad flags a mismatch between the two.
+func renameFootprint(content, newFpName string) string {
+	quoted := strconv.Quote(newFpName)
+	return reFpName.ReplaceAllStringFunc(content, func(m string) string {
+		prefix := reFpName.FindStringSubmatch(m)[1]
+		return prefix + quoted
+	})
 }
 
 func copyFile(src, dest string) error {
